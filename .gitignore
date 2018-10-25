@@ -1,2 +1,16 @@
+# LaTeX
 *.log
 *.aux
+
+# Vivado
+/nexys4-proj/nexys4-proj.*/
+!/nexys4-proj/nexys4-proj.srcs/
+/nexys4-proj/nexys4-proj.srcs/sources_1/ip/*/*
+!/nexys4-proj/nexys4-proj.srcs/sources_1/ip/*/
+!/nexys4-proj/nexys4-proj.srcs/sources_1/ip/*/*.xci
+!/nexys4-proj/nexys4-proj.srcs/sources_1/ip/*/*.prj
+*.wcfg
+
+# Generated files
+/coe/*.coe
+/laptop-src/dump.log
