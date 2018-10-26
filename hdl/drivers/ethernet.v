@@ -15,11 +15,10 @@ module ethernet_driver(
 // long been set up already
 // according to spec: need 200ns setup before nRST deassertion
 // and 100ns hold time afterwards
-localparam RESET_SEQUENCE_LEN_LOG2 = 4;
 localparam RESET_SETUP = 10;
 localparam RESET_HOLD = 5;
 localparam RESET_SEQUENCE_LEN = RESET_SETUP + RESET_HOLD;
-reg [RESET_SEQUENCE_LEN_LOG2-1:0] reset_cnt = 0;
+reg [clog2(RESET_SEQUENCE_LEN)-1:0] reset_cnt = 0;
 assign reset_done = reset_cnt == RESET_SEQUENCE_LEN;
 
 // 100Base-TX Full Duplex, auto-negotiation disabled,

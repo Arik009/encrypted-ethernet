@@ -1,15 +1,14 @@
 // streams ram memory over uart
 // TODO: upgrade this to generic fifo
 module ram_to_uart #(
-	parameter RAM_SIZE_LOG2 = PACKET_BUFFER_SIZE_LOG2,
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
 	input clk, reset, start,
 	// read_end points to one byte after the end, like in C
-	input [RAM_SIZE_LOG2-1:0] read_start, read_end,
+	input [clog2(RAM_SIZE)-1:0] read_start, read_end,
 	input ram_read_ready,
 	input [BYTE_LEN-1:0] ram_read_out,
 	output uart_txd, reg ram_read_req = 0,
-	output [RAM_SIZE_LOG2-1:0] ram_read_addr);
+	output [clog2(RAM_SIZE)-1:0] ram_read_addr);
 
 `include "params.vh"
 
@@ -19,7 +18,7 @@ localparam STATE_WRITING = 2;
 
 reg [1:0] state = STATE_IDLE;
 
-reg [RAM_SIZE_LOG2-1:0] curr_addr;
+reg [clog2(RAM_SIZE)-1:0] curr_addr;
 assign ram_read_addr = curr_addr;
 reg [BYTE_LEN-1:0] data_buff;
 reg data_ready = 0;
@@ -62,12 +61,11 @@ module ram_to_uart_tester(
 
 `include "params.vh"
 
-parameter RAM_SIZE_LOG2 = PACKET_BUFFER_SIZE_LOG2;
 parameter RAM_SIZE = PACKET_BUFFER_SIZE;
 
 wire ram_read_req, ram_read_ready;
 wire [BYTE_LEN-1:0] ram_read_out;
-wire [RAM_SIZE_LOG2-1:0] ram_read_addr;
+wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
 bram_manager bram_manager_inst(
 	.clk(clk), .reset(reset),
 	.read_req(ram_read_req), .read_addr(ram_read_addr),
@@ -107,7 +105,6 @@ module main(
 
 `include "params.vh"
 
-parameter RAM_SIZE_LOG2 = PACKET_BUFFER_SIZE_LOG2;
 parameter RAM_SIZE = PACKET_BUFFER_SIZE;
 
 wire clk_50mhz;
@@ -162,7 +159,7 @@ sync_debounce sd_btnl(
 	.reset(reset), .clk(clk_50mhz), .in(BTNL), .out(btnl));
 
 wire ram_read_req, ram_read_ready, ram_write_enable;
-wire [RAM_SIZE_LOG2-1:0] ram_read_addr, ram_write_addr;
+wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
 wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
 bram_manager bram_manager_inst(
 	.clk(clk_50mhz), .reset(reset),
@@ -194,8 +191,8 @@ dibits_to_bytes eth_dtb(
 assign ram_write_enable = eth_byte_outclk;
 
 // maximum ethernet frame length is 1522 bytes
-localparam MAX_ETH_FRAME_LEN_LOG2 = 11;
-reg [MAX_ETH_FRAME_LEN_LOG2-1:0] eth_byte_cnt = 0;
+localparam MAX_ETH_FRAME_LEN = 1522;
+reg [clog2(MAX_ETH_FRAME_LEN)-1:0] eth_byte_cnt = 0;
 reg record = 1;
 always @(posedge clk_50mhz) begin
 	if (reset) begin

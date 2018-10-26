@@ -16,7 +16,7 @@ delay #(.DELAY_LEN(1)) done_delay(.clk(clk), .in(done_in), .out(done_out));
 // scratch space to shift dibits in
 reg [BYTE_LEN-3:0] shifted;
 // only need half as much since we get 2 bits at a time
-reg [BYTE_LEN_LOG2-2:0] cnt;
+reg [clog2(BYTE_LEN)-2:0] cnt;
 
 always @(posedge clk) begin
 	if (reset) begin

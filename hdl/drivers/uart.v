@@ -1,7 +1,6 @@
 module uart_driver #(
 	// number of cycles per bit
 	// 434 cycles at 50MHz = 115200 baud
-	parameter BAUD_PERIOD_LOG2 = 9,
 	parameter BAUD_PERIOD = 434) (
 	input clk, reset, data_ready, [BYTE_LEN-1:0] data,
 	// done is pulsed when the current input data is consumed
@@ -9,16 +8,15 @@ module uart_driver #(
 
 `include "params.vh"
 
-reg [BAUD_PERIOD_LOG2:0] cnt = 0;
+reg [clog2(BAUD_PERIOD):0] cnt = 0;
 
 // including start and stop bits
-localparam TX_LEN_LOG2 = 4;
 localparam TX_LEN = BYTE_LEN + 2;
 // will never hold start bit
 reg [TX_LEN-2:0] data_shifted;
 
 // amount of data shifted out so far, not including current one
-reg [TX_LEN_LOG2-1:0] data_cnt = TX_LEN - 1;
+reg [clog2(TX_LEN)-1:0] data_cnt = TX_LEN - 1;
 
 always @(posedge clk) begin
 	if (reset) begin

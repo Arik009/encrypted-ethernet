@@ -1,9 +1,9 @@
 module bram_manager #(
-	parameter RAM_SIZE_LOG2 = PACKET_BUFFER_SIZE_LOG2) (
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
 	input clk, reset,
-	input read_req, input [RAM_SIZE_LOG2-1:0] read_addr,
+	input read_req, input [clog2(RAM_SIZE)-1:0] read_addr,
 	input write_enable,
-	input [RAM_SIZE_LOG2-1:0] write_addr,
+	input [clog2(RAM_SIZE)-1:0] write_addr,
 	input [BYTE_LEN-1:0] write_val,
 	output read_ready, output [BYTE_LEN-1:0] read_out
 	);
