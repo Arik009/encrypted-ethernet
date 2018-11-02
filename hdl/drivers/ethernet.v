@@ -19,6 +19,7 @@ localparam RESET_SETUP = 10;
 localparam RESET_HOLD = 5;
 localparam RESET_SEQUENCE_LEN = RESET_SETUP + RESET_HOLD;
 reg [clog2(RESET_SEQUENCE_LEN)-1:0] reset_cnt = 0;
+wire reset_done;
 assign reset_done = reset_cnt == RESET_SEQUENCE_LEN;
 
 // 100Base-TX Full Duplex, auto-negotiation disabled,
@@ -55,6 +56,7 @@ synchronize #(.NSYNC(2)) crsdv_init_synchronizer(
 
 // distinguish crs and dv signals
 // only to be used when state == STATE_RECEIVING
+wire crsdv_toggling, crs, dv;
 assign crsdv_toggling = prev_crsdv != crsdv;
 assign crs = crsdv_toggling ? 0 : crsdv;
 assign dv = crsdv_toggling ? 1 : crsdv;
@@ -100,6 +102,36 @@ always @(posedge clk) begin
 		end
 	end
 	endcase
+end
+
+endmodule
+
+module crc32(
+	input clk, reset,
+	input inclk, input [1:0] in,
+	output [31:0] out);
+
+localparam CRC_INIT = 32'hffffffff;
+// polynomial is reflected
+localparam CRC_POLY = 32'hedb88320;
+
+reg [31:0] curr;
+assign out = ~curr;
+
+// optimized dibit CRC step
+// step1: XOR in both inputs at once
+// step2: first division by poly
+// step3: second division by poly
+wire [31:0] step1, step2, step3;
+assign step1 = {curr[2+:30], curr[0+:2] ^ in};
+assign step2 = step1[1+:31] ^ (step1[0] ? CRC_POLY : 0);
+assign step3 = step2[1+:31] ^ (step2[0] ? CRC_POLY : 0);
+
+always @(posedge clk) begin
+	if (reset)
+		curr <= CRC_INIT;
+	else if (inclk)
+		curr <= step3;
 end
 
 endmodule

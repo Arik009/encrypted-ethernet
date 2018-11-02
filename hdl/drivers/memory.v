@@ -1,5 +1,24 @@
-module bram_driver #(
-	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
+module packet_synth_rom_driver #(
+	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE,
+	parameter READ_LATENCY = PACKET_SYNTH_ROM_LATENCY) (
+	input clk, reset,
+	input read_req, input [clog2(RAM_SIZE)-1:0] read_addr,
+	output read_ready, output [BYTE_LEN-1:0] read_out
+	);
+
+`include "params.vh"
+
+delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
+	.clk(clk), .in(read_req), .out(read_ready));
+packet_synth_rom packet_synth_rom_inst(
+	.clka(clk), .ena(1),
+	.addra(read_addr), .douta(read_out));
+
+endmodule
+
+module packet_buffer_ram_driver #(
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE,
+	parameter READ_LATENCY = PACKET_BUFFER_READ_LATENCY) (
 	input clk, reset,
 	input read_req, input [clog2(RAM_SIZE)-1:0] read_addr,
 	input write_enable,
@@ -10,7 +29,7 @@ module bram_driver #(
 
 `include "params.vh"
 
-delay #(.DELAY_LEN(PACKET_BUFFER_READ_LATENCY)) delay_inst(
+delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
 	.clk(clk), .in(read_req), .out(read_ready));
 packet_buffer_ram packet_buffer_ram_inst(
 	.clka(clk), .ena(1), .wea(write_enable),

@@ -61,12 +61,12 @@ module ram_to_uart_tester(
 
 `include "params.vh"
 
-parameter RAM_SIZE = PACKET_BUFFER_SIZE;
+localparam RAM_SIZE = PACKET_BUFFER_SIZE;
 
 wire ram_read_req, ram_read_ready;
 wire [BYTE_LEN-1:0] ram_read_out;
 wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
-bram_driver bram_driver_inst(
+packet_buffer_ram_driver packet_buffer_ram_driver_inst(
 	.clk(clk), .reset(reset),
 	.read_req(ram_read_req), .read_addr(ram_read_addr),
 	.read_ready(ram_read_ready), .read_out(ram_read_out),
@@ -173,7 +173,7 @@ sync_debounce sd_btnl(
 wire ram_read_req, ram_read_ready, ram_write_enable;
 wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
 wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
-bram_driver bram_driver_inst(
+packet_buffer_ram_driver packet_buffer_ram_driver_inst(
 	.clk(clk), .reset(reset),
 	.read_req(ram_read_req), .read_addr(ram_read_addr),
 	.read_ready(ram_read_ready), .read_out(ram_read_out),

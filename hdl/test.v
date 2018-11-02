@@ -9,8 +9,25 @@ initial forever #10 clk = ~clk;
 reg reset = 1;
 reg start = 0;
 wire txd;
-ram_to_uart_tester ram_to_uart_tester_inst(
-	.clk(clk), .reset(reset), .start(start), .uart_txd(txd));
+
+`include "params.vh"
+
+localparam RAM_SIZE = PACKET_BUFFER_SIZE;
+
+wire ram_read_req, ram_read_ready;
+wire [BYTE_LEN-1:0] ram_read_out;
+wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
+packet_buffer_ram_driver packet_buffer_ram_driver_inst(
+	.clk(clk), .reset(reset),
+	.read_req(ram_read_req), .read_addr(ram_read_addr),
+	.read_ready(ram_read_ready), .read_out(ram_read_out),
+	.write_enable(0));
+ram_to_uart ram_to_uart_inst(
+	.clk(clk), .reset(reset), .start(start),
+	.read_start(0), .read_end(RAM_SIZE),
+	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
+	.uart_txd(txd), .ram_read_req(ram_read_req),
+	.ram_read_addr(ram_read_addr));
 
 initial begin
 	#100
@@ -151,6 +168,71 @@ initial begin
 	#400
 	sys_rst = 1;
 	#1000000
+	$stop();
+end
+
+endmodule
+
+module test_crc();
+
+`include "params.vh"
+
+localparam RAM_SIZE = PACKET_SYNTH_ROM_SIZE;
+
+reg clk = 0;
+// 50MHz clock
+initial forever #10 clk = ~clk;
+
+reg reset = 1;
+wire read_req;
+reg [clog2(RAM_SIZE)-1:0] read_addr = 0;
+wire read_ready;
+wire [BYTE_LEN-1:0] read_out;
+packet_synth_rom_driver packet_synth_rom_driver_inst(
+	.clk(clk), .reset(reset), .read_req(read_req), .read_addr(read_addr),
+	.read_ready(read_ready), .read_out(read_out));
+reg done_in = 0;
+wire [1:0] dibit_out;
+wire byte_clk, done_out;
+wire ready;
+bytes_to_dibits btd_inst(
+	.clk(clk), .reset(reset), .inclk(read_ready),
+	.in(read_out), .done_in(done_in),
+	.out(dibit_out), .outclk(byte_clk), .ready(ready),
+	.done_out(done_out));
+wire [31:0] crc;
+crc32 crc32_inst(
+	.clk(clk), .reset(reset), .inclk(byte_clk),
+	.in(dibit_out), .out(crc));
+
+reg reading = 0;
+reg [clog2(BYTE_LEN)-2:0] dibit_cnt;
+always @(posedge clk) begin
+	if (reset)
+		dibit_cnt = 0;
+	else if (reading) begin
+		if (dibit_cnt == BYTE_LEN/2-1)
+			read_addr <= read_addr + 1;
+		dibit_cnt <= dibit_cnt + 1;
+	end
+end
+assign read_req = reading && dibit_cnt == 0;
+
+initial begin
+	#100
+	reset = 0;
+
+	// reset sequence
+	#400
+
+	reading = 1;
+	// read out sample packet
+	// 62 bytes * 4 dibits * 20ns
+	#4960
+	reading = 0;
+
+	#100
+
 	$stop();
 end
 
