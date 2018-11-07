@@ -61,10 +61,10 @@ wire [1:0] eth_out;
 wire eth_outclk, eth_done;
 wire [BYTE_LEN-1:0] eth_byte_out;
 wire eth_byte_outclk, eth_dtb_done;
-ethernet_driver eth_driv_inst(
+rmii_driver rmii_driv_inst(
 	.clk(clk), .reset(reset),
-	.crsdv(crsdv_tr), .rxerr(rxerr_tr),
-	.rxd(rxd_tr),
+	.crsdv_in(crsdv_tr), .rxd_in(rxd_tr),
+	.rxerr(rxerr_tr),
 	.intn(intn), .rstn(rstn),
 	.out(eth_out),
 	.outclk(eth_outclk), .done(eth_done));
@@ -244,12 +244,11 @@ reg clk_100mhz = 0;
 // 100MHz clock
 initial forever #5 clk_100mhz = ~clk_100mhz;
 
-wire clk, clk_50mhz_fwd;
+wire clk;
 clk_wiz_0 clk_wiz_inst(
 	.reset(0),
 	.clk_in1(clk_100mhz),
-	.clk_out1(clk),
-	.clk_out3(clk_50mhz_fwd));
+	.clk_out1(clk));
 
 reg reset = 1, start = 0;
 wire eth_txen;

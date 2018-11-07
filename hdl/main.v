@@ -230,10 +230,10 @@ assign ETH_MDC = 0;
 assign ETH_MDIO = 0;
 wire eth_outclk, eth_done, eth_byte_outclk, eth_dtb_done;
 wire [1:0] eth_out;
-ethernet_driver eth_driv_inst(
+rmii_driver rmii_driv_inst(
 	.clk(clk), .reset(reset),
-	.crsdv(ETH_CRSDV), .rxerr(ETH_RXERR),
-	.rxd(ETH_RXD),
+	.crsdv_in(ETH_CRSDV), .rxd_in(ETH_RXD),
+	.rxerr(ETH_RXERR),
 	.intn(ETH_INTN), .rstn(ETH_RSTN),
 	.out(eth_out),
 	.outclk(eth_outclk), .done(eth_done));
@@ -291,10 +291,8 @@ assign hex_display_data = {
 };
 
 assign JB = {
-	4'h0,
-	UART_RXD_OUT,
-	ETH_TXEN,
-	ETH_TXD
+	6'h0,
+	UART_RXD_OUT
 };
 
 endmodule
