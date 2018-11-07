@@ -11,7 +11,7 @@ module packet_synth_rom_driver #(
 delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
 	.clk(clk), .in(read_req), .out(read_ready));
 packet_synth_rom packet_synth_rom_inst(
-	.clka(clk), .ena(1),
+	.clka(clk),
 	.addra(read_addr), .douta(read_out));
 
 endmodule
@@ -32,9 +32,9 @@ module packet_buffer_ram_driver #(
 delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
 	.clk(clk), .in(read_req), .out(read_ready));
 packet_buffer_ram packet_buffer_ram_inst(
-	.clka(clk), .ena(1), .wea(write_enable),
+	.clka(clk), .wea(write_enable),
 	.addra(write_addr), .dina(write_val),
-	.clkb(clk), .enb(1), .addrb(read_addr), .doutb(read_out));
+	.clkb(clk), .addrb(read_addr), .doutb(read_out));
 
 endmodule
 

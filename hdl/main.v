@@ -153,14 +153,11 @@ wire clk_50mhz;
 wire clk;
 assign clk = clk_50mhz;
 
-wire clk_50mhz_fwd;
-
 // 50MHz clock for Ethernet receiving
 clk_wiz_0 clk_wiz_inst(
 	.reset(0),
 	.clk_in1(CLK100MHZ),
-	.clk_out1(clk_50mhz),
-	.clk_out3(clk_50mhz_fwd));
+	.clk_out1(clk_50mhz));
 
 wire reset;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) reset_delay(
