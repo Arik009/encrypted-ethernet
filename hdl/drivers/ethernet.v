@@ -51,7 +51,7 @@ end
 // receiving a packet, but this is okay because it will immediately
 // revert to the idle state
 wire crsdv_init;
-synchronize #(.NSYNC(2)) crsdv_init_synchronizer(
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) crsdv_init_synchronizer(
 	.clk(clk), .in(prev_crsdv), .out(crsdv_init));
 
 // distinguish crs and dv signals
@@ -112,11 +112,13 @@ module crc32(
 	output [31:0] out);
 
 localparam CRC_INIT = 32'hffffffff;
-// polynomial is reflected
+// polynomial is reflected since we operate in
+// least-significant-bit first for simplicity
 localparam CRC_POLY = 32'hedb88320;
 
 reg [31:0] curr;
-assign out = ~curr;
+// most significant byte first
+assign out = ~{curr[0+:8], curr[8+:8], curr[16+:8], curr[24+:8]};
 
 // optimized dibit CRC step
 // step1: XOR in both inputs at once

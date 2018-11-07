@@ -194,11 +194,11 @@ packet_synth_rom_driver packet_synth_rom_driver_inst(
 reg done_in = 0;
 wire [1:0] dibit_out;
 wire byte_clk, done_out;
-wire ready;
+wire btd_idle;
 bytes_to_dibits btd_inst(
 	.clk(clk), .reset(reset), .inclk(read_ready),
 	.in(read_out), .done_in(done_in),
-	.out(dibit_out), .outclk(byte_clk), .ready(ready),
+	.out(dibit_out), .outclk(byte_clk), .idle(btd_idle),
 	.done_out(done_out));
 wire [31:0] crc;
 crc32 crc32_inst(
@@ -230,6 +230,48 @@ initial begin
 	// 62 bytes * 4 dibits * 20ns
 	#4960
 	reading = 0;
+
+	#100
+
+	$stop();
+end
+
+endmodule
+
+module test_packet_synth();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk, clk_50mhz_fwd;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk),
+	.clk_out3(clk_50mhz_fwd));
+
+reg reset = 1, start = 0;
+wire eth_txen;
+wire [1:0] eth_txd;
+packet_synth packet_synth_inst(
+	.clk(clk), .reset(reset), .start(start),
+	.data_ram_start_in(0), .data_ram_end_in(73),
+	.eth_txen(eth_txen), .eth_txd(eth_txd));
+
+initial begin
+	#2000
+	reset = 0;
+
+	// reset sequence
+	#400
+
+	start = 1;
+	#20
+	start = 0;
+
+	// bytes * dibits/byte * ns/dibit
+	#(73 * 4 * 20)
 
 	#100
 

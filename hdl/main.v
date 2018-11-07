@@ -55,33 +55,62 @@ end
 
 endmodule
 
-module ram_to_uart_tester(
-	input clk, reset, start,
-	output uart_txd);
+// streams ram memory over ethernet
+// TODO: upgrade this to include packet headers and crc
+module packet_synth #(
+	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
+	input clk, reset,
+	input start,
+	// location of data in memory
+	// data_ram_end_in, as usual, points to one byte after the last byte
+	input [clog2(RAM_SIZE)-1:0] data_ram_start_in, data_ram_end_in,
+	output eth_txen,
+	output [1:0] eth_txd);
 
 `include "params.vh"
 
-localparam RAM_SIZE = PACKET_BUFFER_SIZE;
+reg [clog2(RAM_SIZE)-1:0] data_ram_end, ram_addr;
+wire [clog2(RAM_SIZE)-1:0] next_ram_addr;
+assign next_ram_addr = ram_addr + 1;
 
-wire ram_read_req, ram_read_ready;
+reg reading = 0;
+
+wire clk_div4;
+clock_divider #(.PULSE_PERIOD(4)) clk_div4_inst(
+	.clk(clk), .start(start), .en(reading), .out(clk_div4));
+
+wire ram_read_ready;
 wire [BYTE_LEN-1:0] ram_read_out;
-wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
-packet_buffer_ram_driver packet_buffer_ram_driver_inst(
+packet_synth_rom_driver packet_synth_rom_driver_inst(
 	.clk(clk), .reset(reset),
-	.read_req(ram_read_req), .read_addr(ram_read_addr),
-	.read_ready(ram_read_ready), .read_out(ram_read_out),
-	.write_enable(0));
-ram_to_uart ram_to_uart_inst(
-	.clk(clk), .reset(reset), .start(start),
-	.read_start(0), .read_end(RAM_SIZE),
-	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
-	.uart_txd(uart_txd), .ram_read_req(ram_read_req),
-	.ram_read_addr(ram_read_addr));
+	.read_req(clk_div4), .read_addr(ram_addr),
+	.read_ready(ram_read_ready), .read_out(ram_read_out));
+wire [1:0] btd_out;
+bytes_to_dibits btd_inst(
+	.clk(clk), .reset(reset), .inclk(ram_read_ready),
+	.in(ram_read_out), .done_in(0),
+	.out(btd_out), .outclk(eth_txen));
+assign eth_txd = eth_txen ? btd_out : 2'b00;
+
+always @(posedge clk) begin
+	if (reset)
+		reading <= 0;
+	else if (start) begin
+		ram_addr <= data_ram_start_in;
+		data_ram_end <= data_ram_end_in;
+		reading <= 1;
+	end else if(clk_div4) begin
+		if (next_ram_addr == data_ram_end)
+			reading <= 0;
+		ram_addr <= next_ram_addr;
+	end
+end
 
 endmodule
 
 // SW[0]: reset
 // BTNC: dump ram
+// BTNL: send sample packet
 module main(
 	input CLK100MHZ,
 	input [15:0] SW,
@@ -101,6 +130,9 @@ module main(
 	inout [1:0] ETH_RXD,
 	output ETH_REFCLK, ETH_INTN, ETH_RSTN,
 	output UART_RXD_OUT, UART_CTS,
+	output ETH_TXEN,
+	output [1:0] ETH_TXD,
+	output ETH_MDC, ETH_MDIO,
 	inout [15:0] ddr2_dq,
 	inout [1:0] ddr2_dqs_n, ddr2_dqs_p,
 	output [12:0] ddr2_addr,
@@ -121,13 +153,18 @@ wire clk_50mhz;
 wire clk;
 assign clk = clk_50mhz;
 
+wire clk_50mhz_fwd;
+
 // 50MHz clock for Ethernet receiving
 clk_wiz_0 clk_wiz_inst(
 	.reset(0),
-	.clk_in1(CLK100MHZ), .clk_out1(clk_50mhz));
+	.clk_in1(CLK100MHZ),
+	.clk_out1(clk_50mhz),
+	.clk_out3(clk_50mhz_fwd));
 
 wire reset;
-synchronize(.clk(clk), .in(SW[0]), .out(reset));
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) reset_delay(
+	.clk(clk), .in(SW[0]), .out(reset));
 
 wire [31:0] hex_display_data;
 wire [6:0] segments;
@@ -164,11 +201,16 @@ assign VGA_VS = ~vsync;
 
 assign UART_CTS = 1;
 
-wire btnc, btnl;
+wire btnc_raw, btnl_raw, btnc, btnl;
 sync_debounce sd_btnc(
-	.reset(reset), .clk(clk), .in(BTNC), .out(btnc));
+	.reset(reset), .clk(clk), .in(BTNC), .out(btnc_raw));
 sync_debounce sd_btnl(
-	.reset(reset), .clk(clk), .in(BTNL), .out(btnl));
+	.reset(reset), .clk(clk), .in(BTNL), .out(btnl_raw));
+
+pulse_generator pg_btnc(
+	.clk(clk), .reset(reset), .in(btnc_raw), .out(btnc));
+pulse_generator pg_btnl(
+	.clk(clk), .reset(reset), .in(btnl_raw), .out(btnl));
 
 wire ram_read_req, ram_read_ready, ram_write_enable;
 wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
@@ -187,6 +229,8 @@ ram_to_uart ram_to_uart_inst(
 	.ram_read_addr(ram_read_addr));
 
 assign ETH_REFCLK = clk;
+assign ETH_MDC = 0;
+assign ETH_MDIO = 0;
 wire eth_outclk, eth_done, eth_byte_outclk, eth_dtb_done;
 wire [1:0] eth_out;
 ethernet_driver eth_driv_inst(
@@ -218,6 +262,20 @@ always @(posedge clk) begin
 end
 assign ram_write_addr = eth_byte_cnt;
 
+wire eth_txen;
+wire [1:0] eth_txd;
+packet_synth packet_synth_inst(
+	.clk(clk), .reset(reset), .start(btnl),
+	.data_ram_start_in(0), .data_ram_end_in(73),
+	.eth_txen(eth_txen), .eth_txd(eth_txd));
+
+// buffer the outputs so that eth_txd calculation would be
+// under timing constraints
+delay eth_txen_delay(
+	.clk(clk), .in(eth_txen), .out(ETH_TXEN));
+delay #(.DATA_WIDTH(2)) eth_txd_delay(
+	.clk(clk), .in(eth_txd), .out(ETH_TXD));
+
 // DEBUGGING SIGNALS
 
 wire blink;
@@ -237,9 +295,9 @@ assign hex_display_data = {
 
 assign JB = {
 	4'h0,
-	ETH_RXD,
 	UART_RXD_OUT,
-	ETH_CRSDV
+	ETH_TXEN,
+	ETH_TXD
 };
 
 endmodule

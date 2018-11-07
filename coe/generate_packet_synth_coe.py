@@ -1,7 +1,11 @@
 # sample taken from StackOverflow:
 # https://stackoverflow.com/questions/40017293/check-fcs-ethernet-frame-crc-32-online-tools
 
-sample_frame_str = '000AE6F005A3001234567890080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
+sample_frame_str = 'FFFFFFFFFFFF001234567890080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
+# add preamble manually for testing
+sample_frame_str = '555555555555D5' + sample_frame_str
+# add crc manually for testing
+sample_frame_str += 'F9065ED2'
 sample_frame = bytes.fromhex(sample_frame_str)
 
 NUM_ELEMENTS = 4096;
