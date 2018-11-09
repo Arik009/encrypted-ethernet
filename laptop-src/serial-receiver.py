@@ -41,8 +41,9 @@ with serial.Serial(port = serial_port,
 	print('Serial Connected!')
 
 	if ser.isOpen():
-		 print(ser.name + ' is open...')
+		print(ser.name + ' is open...')
 
+	ser.write(bytes.fromhex('00001122'))
 	while True:
 		data = ser.read(128)
 		if len(data) > 0:

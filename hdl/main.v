@@ -1,5 +1,5 @@
 // streams ram memory over uart
-// TODO: upgrade this to generic fifo
+// designed for 115200 baud
 module ram_to_uart #(
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
 	input clk, reset, start,
@@ -22,10 +22,10 @@ reg [clog2(RAM_SIZE)-1:0] curr_addr;
 assign ram_read_addr = curr_addr;
 reg [BYTE_LEN-1:0] data_buff;
 reg data_ready = 0;
-wire uart_driver_done;
-uart_driver uart_driver_inst(
+wire uart_tx_done;
+uart_tx_driver uart_tx_driver_inst(
 	.clk(clk), .reset(reset), .data_ready(data_ready),
-	.data(data_buff), .txd(uart_txd), .done(uart_driver_done));
+	.data(data_buff), .txd(uart_txd), .done(uart_tx_done));
 
 always @(posedge clk) begin
 	if (reset) begin
@@ -42,7 +42,7 @@ always @(posedge clk) begin
 		ram_read_req <= 0;
 		data_ready <= 1;
 		data_buff <= ram_read_out;
-	end else if (state == STATE_WRITING && uart_driver_done) begin
+	end else if (state == STATE_WRITING && uart_tx_done) begin
 		if (curr_addr == read_end)
 			state <= STATE_IDLE;
 		else begin
@@ -129,6 +129,7 @@ module main(
 	inout ETH_CRSDV, ETH_RXERR,
 	inout [1:0] ETH_RXD,
 	output ETH_REFCLK, ETH_INTN, ETH_RSTN,
+	input UART_TXD_IN, UART_RTS,
 	output UART_RXD_OUT, UART_CTS,
 	output ETH_TXEN,
 	output [1:0] ETH_TXD,
@@ -292,7 +293,7 @@ assign hex_display_data = {
 
 assign JB = {
 	6'h0,
-	UART_RXD_OUT
+	UART_TXD_IN
 };
 
 endmodule

@@ -3,7 +3,7 @@ IP changes will have to be ported between vivado versions manually. This file se
 2018.2 => 2016.2
 ================
 
-
+- clk_wiz_0: add 120MHz output clock to clk_out3
 
 2016.2 => 2018.2
 ================

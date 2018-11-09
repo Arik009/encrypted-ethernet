@@ -279,13 +279,113 @@ end
 
 endmodule
 
-module test_main();
+module test_uart_to_ram();
 
-reg clk;
-// 50MHz clock
-initial forever #10 clk = ~clk;
+`include "params.vh"
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+reg clk_12mbaud = 0;
+initial forever #41.6667 clk_12mbaud = ~clk_12mbaud;
+
+wire clk, clk_120mhz;
+clk_wiz_0 clk_wiz_inst(
+	.reset(1'b0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk),
+	.clk_out3(clk_120mhz));
+
+reg reset = 1;
+
+localparam RAM_SIZE = PACKET_BUFFER_SIZE;
+
+wire ram_read_req;
+wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
+wire ram_write_enable;
+wire [clog2(RAM_SIZE)-1:0] ram_write_addr;
+wire [BYTE_LEN-1:0] ram_write_val;
+wire ram_read_ready;
+wire [BYTE_LEN-1:0] ram_read_out;
+packet_buffer_ram_driver ram_driv_inst(
+	.clk(clk), .reset(reset),
+	.read_req(ram_read_req), .read_addr(ram_read_addr),
+	.write_enable(ram_write_enable),
+	.write_addr(ram_write_addr),
+	.write_val(ram_write_val),
+	.read_ready(ram_read_ready), .read_out(ram_read_out));
+
+wire uart_rxd;
+reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
+wire [7:0] uart_out;
+wire uart_out_ready;
+uart_rx_fast_driver uart_rx_inst (
+	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.rxd(uart_rxd), .out(uart_out), .out_ready(uart_out_ready));
+stream_to_memory uart_stm_inst(
+	.clk(clk), .reset(reset),
+	.set_offset_req(1'b0), .set_offset_val(0),
+	.in_ready(uart_out_ready), .in(uart_out),
+	.write_req(ram_write_enable), .write_addr(ram_write_addr),
+	.write_val(ram_write_val));
+
+reg sfm_start = 0;
+
+wire uart_in_ready;
+wire [BYTE_LEN-1:0] uart_in;
+wire uart_txd, uart_tx_ready;
+uart_tx_fast_stream_driver uart_tx_inst(
+	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset), .start(sfm_start),
+	.in_ready(uart_in_ready), .in(uart_in), .txd(uart_txd),
+	.ready(uart_tx_ready));
+stream_from_memory uart_sfm_inst(
+	.clk(clk), .reset(reset), .start(sfm_start),
+	.read_start(0), .read_end(3),
+	.ready(uart_tx_ready),
+	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
+	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
+	.out_ready(uart_in_ready), .out(uart_in));
+
+assign uart_rxd = test_data[31];
+reg sending = 0;
+always @(posedge clk_12mbaud) begin
+	if (sending)
+		test_data <= {test_data[30:0], test_data[31]};
+end
 
 initial begin
+	#2000
+	reset = 0;
+	#20
+	sending = 1;
+	#(32 * 2 * 41.6667)
+	#40
+	sfm_start = 1;
+	#20
+	sfm_start = 0;
+	#(32 * 2 * 41.6667)
+	#40
+	$stop();
+end
+
+endmodule
+
+module test_main();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk, clk_120mhz;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk),
+	.clk_out3(clk_120mhz));
+
+initial begin
+	#10000
 	$stop();
 end
 

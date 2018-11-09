@@ -119,7 +119,6 @@ endmodule
 
 // pulses for a single clock cycle every PULSE_PERIOD
 module clock_divider #(
-	// has to be a power of 2
 	parameter PULSE_PERIOD = 4) (
 	// only pulses if en is asserted
 	input clk, start, en, output out);
@@ -131,6 +130,8 @@ assign out = en && cnt == 0;
 
 always @(posedge clk) begin
 	if (start)
+		cnt <= 0;
+	else if (cnt == PULSE_PERIOD-1)
 		cnt <= 0;
 	else
 		cnt <= cnt + 1;

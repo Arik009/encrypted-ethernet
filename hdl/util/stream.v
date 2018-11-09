@@ -99,3 +99,96 @@ always @(posedge clk) begin
 end
 
 endmodule
+
+// stream data out of memory, rate-limited by ready
+module stream_from_memory #(
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
+	input clk, reset, start,
+	// as usual, read_end is one byte after the last byte
+	input [clog2(RAM_SIZE)-1:0] read_start, read_end,
+	// ready is asserted when the next read should be initiated
+	input ready,
+	input ram_read_ready,
+	input [BYTE_LEN-1:0] ram_read_out,
+	output reg ram_read_req = 0,
+	output reg [clog2(RAM_SIZE)-1:0] ram_read_addr,
+	output out_ready,
+	output [BYTE_LEN-1:0] out);
+
+`include "params.vh"
+
+assign out_ready = ram_read_ready;
+assign out = ram_read_out;
+
+// save read_end so that it can be changed after start
+reg [clog2(RAM_SIZE)-1:0] read_end_buf;
+
+wire [clog2(RAM_SIZE)-1:0] next_addr;
+assign next_addr = ram_read_addr + 1;
+wire idle;
+assign idle = next_addr == read_end_buf;
+
+reg prev_ready = 0;
+
+always @(posedge clk) begin
+	if (reset) begin
+		ram_read_req <= 0;
+		// stop stream even if ready is asserted (i.e. make idle = 1)
+		ram_read_addr <= -1;
+		read_end_buf <= 0;
+		prev_ready <= 0;
+	end else begin
+		prev_ready <= ready;
+		if (start) begin
+			ram_read_addr <= read_start;
+			read_end_buf <= read_end;
+		end else if (!idle && prev_ready)
+			// only advance read address on next clock cycle
+			// so that ram reads from current address
+			ram_read_addr <= ram_read_addr + 1;
+		if ((start || !idle) && ready)
+			ram_read_req <= 1;
+		else
+			ram_read_req <= 0;
+	end
+end
+
+endmodule
+
+// create a memory write stream
+// for testing purposes
+module stream_to_memory #(
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
+	input clk, reset,
+	// used to set the offset for a new write stream
+	input set_offset_req,
+	input [clog2(RAM_SIZE)-1:0] set_offset_val,
+	input in_ready,
+	input [BYTE_LEN-1:0] in,
+	output reg write_req = 0,
+	output reg [clog2(RAM_SIZE)-1:0] write_addr,
+	output reg [BYTE_LEN-1:0] write_val);
+
+`include "params.vh"
+
+reg [clog2(RAM_SIZE)-1:0] curr_addr = 0;
+always @(posedge clk) begin
+	if (reset) begin
+		write_req <= 0;
+		curr_addr <= 0;
+	end else begin
+		if (set_offset_req)
+			curr_addr <= set_offset_val;
+		else if (in_ready)
+			curr_addr <= curr_addr + 1;
+
+		if (in_ready) begin
+			write_req <= 1;
+			write_addr <= curr_addr;
+			write_val <= in;
+		end else
+			write_req <= 0;
+	end
+end
+
+endmodule
