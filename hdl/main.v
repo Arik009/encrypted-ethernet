@@ -109,6 +109,7 @@ end
 endmodule
 
 // SW[0]: reset
+// SW[1]: master configure: on for transmit, off for receive
 // BTNC: dump ram
 // BTNL: send sample packet
 module main(
@@ -154,15 +155,32 @@ wire clk_50mhz;
 wire clk;
 assign clk = clk_50mhz;
 
+wire clk_120mhz;
+
 // 50MHz clock for Ethernet receiving
 clk_wiz_0 clk_wiz_inst(
 	.reset(0),
 	.clk_in1(CLK100MHZ),
-	.clk_out1(clk_50mhz));
+	.clk_out1(clk_50mhz),
+	.clk_out3(clk_120mhz));
+
+wire sw0, sw1;
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
+	.clk(clk), .in(SW[0]), .out(sw0));
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
+	.clk(clk), .in(SW[1]), .out(sw1));
+
+wire config_transmit;
+assign config_transmit = sw1;
+
+reg prev_sw1 = 0;
+always @(posedge clk) begin
+	prev_sw1 <= sw1;
+end
 
 wire reset;
-delay #(.DELAY_LEN(SYNC_DELAY_LEN)) reset_delay(
-	.clk(clk), .in(SW[0]), .out(reset));
+// reset device when configuration is changed
+assign reset = sw0 || (sw1 != prev_sw1);
 
 wire [31:0] hex_display_data;
 wire [6:0] segments;
@@ -213,18 +231,57 @@ pulse_generator pg_btnl(
 wire ram_read_req, ram_read_ready, ram_write_enable;
 wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
 wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
-packet_buffer_ram_driver packet_buffer_ram_driver_inst(
+wire [BYTE_LEN-1:0] ram_read_out;
+packet_buffer_ram_driver ram_driv_inst(
 	.clk(clk), .reset(reset),
 	.read_req(ram_read_req), .read_addr(ram_read_addr),
-	.read_ready(ram_read_ready), .read_out(ram_read_out),
 	.write_enable(ram_write_enable),
-	.write_addr(ram_write_addr), .write_val(ram_write_val));
-ram_to_uart ram_to_uart_inst(
-	.clk(clk), .reset(reset), .start(btnc),
+	.write_addr(ram_write_addr),
+	.write_val(ram_write_val),
+	.read_ready(ram_read_ready), .read_out(ram_read_out));
+
+wire uart_ram_write_enable;
+wire [clog2(RAM_SIZE)-1:0] uart_ram_write_addr;
+wire [BYTE_LEN-1:0] uart_ram_write_val;
+wire eth_ram_write_enable;
+wire [clog2(RAM_SIZE)-1:0] eth_ram_write_addr;
+wire [BYTE_LEN-1:0] eth_ram_write_val;
+assign ram_write_enable =
+	config_transmit ? uart_ram_write_enable : eth_ram_write_enable;
+assign ram_write_addr =
+	config_transmit ? uart_ram_write_addr : eth_ram_write_addr;
+assign ram_write_val =
+	config_transmit ? uart_ram_write_val : eth_ram_write_val;
+
+wire [7:0] uart_rx_out;
+wire uart_rx_out_ready;
+uart_rx_fast_driver uart_rx_inst (
+	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.rxd(UART_TXD_IN), .out(uart_rx_out), .out_ready(uart_rx_out_ready));
+stream_to_memory uart_stm_inst(
+	.clk(clk), .reset(reset),
+	.set_offset_req(1'b0), .set_offset_val(0),
+	.in_ready(uart_rx_out_ready), .in(uart_rx_out),
+	.write_req(uart_ram_write_enable), .write_addr(uart_ram_write_addr),
+	.write_val(uart_ram_write_val));
+
+wire uart_tx_in_ready, uart_tx_ready;
+wire [BYTE_LEN-1:0] uart_tx_in;
+wire uart_txd;
+wire uart_sfm_start;
+assign uart_sfm_start = btnc;
+uart_tx_fast_stream_driver uart_tx_inst(
+	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.start(uart_sfm_start),
+	.in_ready(uart_tx_in_ready), .in(uart_tx_in), .txd(UART_RXD_OUT),
+	.ready(uart_tx_ready));
+stream_from_memory uart_sfm_inst(
+	.clk(clk), .reset(reset), .start(uart_sfm_start),
 	.read_start(0), .read_end(RAM_SIZE),
+	.ready(uart_tx_ready),
 	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
-	.uart_txd(UART_RXD_OUT), .ram_read_req(ram_read_req),
-	.ram_read_addr(ram_read_addr));
+	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
+	.out_ready(uart_tx_in_ready), .out(uart_tx_in));
 
 assign ETH_REFCLK = clk;
 assign ETH_MDC = 0;
@@ -241,8 +298,9 @@ rmii_driver rmii_driv_inst(
 dibits_to_bytes eth_dtb(
 	.clk(clk), .reset(reset),
 	.inclk(eth_outclk), .in(eth_out), .done_in(eth_done),
-	.out(ram_write_val), .outclk(eth_byte_outclk), .done_out(eth_dtb_done));
-assign ram_write_enable = eth_byte_outclk;
+	.out(eth_ram_write_val), .outclk(eth_byte_outclk),
+	.done_out(eth_dtb_done));
+assign eth_ram_write_enable = eth_byte_outclk;
 
 // maximum ethernet frame length is 1522 bytes
 localparam MAX_ETH_FRAME_LEN = 1522;
@@ -258,7 +316,7 @@ always @(posedge clk) begin
 	end else if (eth_byte_outclk && record)
 		eth_byte_cnt <= eth_byte_cnt + 1;
 end
-assign ram_write_addr = eth_byte_cnt;
+assign eth_ram_write_addr = eth_byte_cnt;
 
 wire eth_txen;
 wire [1:0] eth_txd;

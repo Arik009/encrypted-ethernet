@@ -317,7 +317,6 @@ packet_buffer_ram_driver ram_driv_inst(
 	.read_ready(ram_read_ready), .read_out(ram_read_out));
 
 wire uart_rxd;
-reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
 wire [7:0] uart_out;
 wire uart_out_ready;
 uart_rx_fast_driver uart_rx_inst (
@@ -347,6 +346,7 @@ stream_from_memory uart_sfm_inst(
 	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
 	.out_ready(uart_in_ready), .out(uart_in));
 
+reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
 assign uart_rxd = test_data[31];
 reg sending = 0;
 always @(posedge clk_12mbaud) begin

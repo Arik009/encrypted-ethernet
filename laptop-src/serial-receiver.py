@@ -31,7 +31,7 @@ if serial_port is None:
 	raise Exception('USB-Serial Controller Not Found')
 
 with serial.Serial(port = serial_port, 
-		baudrate=115200, 
+		baudrate=12000000,
 		parity=serial.PARITY_NONE, 
 		stopbits=serial.STOPBITS_ONE, 
 		bytesize=serial.EIGHTBITS,
@@ -43,7 +43,6 @@ with serial.Serial(port = serial_port,
 	if ser.isOpen():
 		print(ser.name + ' is open...')
 
-	ser.write(bytes.fromhex('00001122'))
 	while True:
 		data = ser.read(128)
 		if len(data) > 0:
