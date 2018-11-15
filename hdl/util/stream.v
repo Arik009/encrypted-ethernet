@@ -100,6 +100,45 @@ end
 
 endmodule
 
+module bytes_to_colors(
+	input clk, reset,
+	input inclk, input [BYTE_LEN-1:0] in,
+	output reg outclk, output reg [COLOR_LEN-1:0] out);
+
+`include "params.vh"
+
+// three states to convert three bytes into two colors
+reg [1:0] state = 0;
+reg [BYTE_LEN-1:0] prev_in;
+
+always @(posedge clk) begin
+	prev_in <= in;
+	if (reset)
+		state <= 0;
+	else if (inclk) begin
+		case (state)
+		1: begin
+			outclk <= 1;
+			out <= {prev_in, in[BYTE_LEN/2+:BYTE_LEN/2]};
+		end
+		2: begin
+			outclk <= 1;
+			out <= {prev_in[0+:BYTE_LEN/2], in};
+		end
+		default:
+			outclk <= 0;
+		endcase
+
+		if (state == 2)
+			state <= 0;
+		else
+			state <= state + 1;
+	end else
+		outclk <= 0;
+end
+
+endmodule
+
 // stream data out of memory, rate-limited by ready
 module stream_from_memory #(
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
@@ -123,10 +162,11 @@ assign out = ram_read_out;
 // save read_end so that it can be changed after start
 reg [clog2(RAM_SIZE)-1:0] read_end_buf;
 
-wire [clog2(RAM_SIZE)-1:0] next_addr;
-assign next_addr = ram_read_addr + 1;
+// disambiguate reading first and last word
+reg first_word = 0;
+
 wire idle;
-assign idle = next_addr == read_end_buf;
+assign idle = !first_word && ram_read_addr == read_end_buf;
 
 reg prev_ready = 0;
 
@@ -134,18 +174,22 @@ always @(posedge clk) begin
 	if (reset) begin
 		ram_read_req <= 0;
 		// stop stream even if ready is asserted (i.e. make idle = 1)
-		ram_read_addr <= -1;
+		ram_read_addr <= 0;
 		read_end_buf <= 0;
 		prev_ready <= 0;
+		first_word <= 0;
 	end else begin
 		prev_ready <= ready;
 		if (start) begin
 			ram_read_addr <= read_start;
 			read_end_buf <= read_end;
-		end else if (!idle && prev_ready)
+			first_word <= 1;
+		end else if (!idle && prev_ready) begin
 			// only advance read address on next clock cycle
 			// so that ram reads from current address
 			ram_read_addr <= ram_read_addr + 1;
+			first_word <= 0;
+		end
 		if ((start || !idle) && ready)
 			ram_read_req <= 1;
 		else

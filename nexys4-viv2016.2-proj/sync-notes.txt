@@ -4,6 +4,8 @@ IP changes will have to be ported between vivado versions manually. This file se
 ================
 
 - clk_wiz_0: add 120MHz output clock to clk_out3
+- clk_wiz_0: add 65MHz output clock to clk_out4
+- small_sync_fifo: fifo, independent clocks distributed ram, width=8, depth=16
 
 2016.2 => 2018.2
 ================

@@ -50,8 +50,8 @@ module uart_rx_fast_driver #(
 	parameter CYCLES_PER_BIT = 10) (
 	input clk, clk_120mhz, reset,
 	input rxd,
-	output reg [7:0] out,
-	output reg out_ready = 0);
+	output [7:0] out,
+	output out_ready);
 
 `include "params.vh"
 
@@ -64,30 +64,28 @@ reg [clog2(CYCLES_PER_BIT)-1:0] cycle_in_bit_cnt = 0;
 // allow bit_in_byte_cnt to go to BYTE_LEN + 2 to detect start/stop bit
 reg [clog2(BYTE_LEN+2)-1:0] bit_in_byte_cnt = 0;
 
-reg [BYTE_LEN-1:0] curr_byte_buffer_120mhz;
-// new_byte_indicator_120mhz is flipped each time a new byte appears
-// on the 50mhz side, use new_byte_indicator to keep track of
-// where we are
-reg new_byte_indicator_120mhz = 0;
-reg new_byte_indicator = 0;
+reg out_ready_120mhz = 0;
+reg [BYTE_LEN-1:0] out_120mhz;
 
-always @(posedge clk) begin
-	if (reset) begin
-		out_ready <= 0;
-		new_byte_indicator <= 0;
-	end else if (new_byte_indicator_120mhz != new_byte_indicator) begin
-		new_byte_indicator <= ~new_byte_indicator;
-		out <= curr_byte_buffer_120mhz;
-		out_ready <= 1;
-	end else
-		out_ready <= 0;
-end
+wire fifo_empty, fifo_rden;
+assign fifo_rden = !fifo_empty;
+small_sync_fifo data_fifo(
+	.rst(reset),
+	.wr_clk(clk_120mhz), .rd_clk(clk),
+	.din(out_120mhz), .wr_en(out_ready_120mhz),
+	.rd_en(fifo_rden), .dout(out),
+	.empty(fifo_empty));
+delay fifo_read_delay(
+	.clk(clk), .in(fifo_rden), .out(out_ready));
 
+// buffer signals to meet timing constraints
+reg reset_buf = 0;
 always @(posedge clk_120mhz) begin
-	if (reset) begin
+	reset_buf <= reset;
+	if (reset_buf) begin
 		bit_in_byte_cnt <= 0;
 		start_bit_cnt <= 0;
-		new_byte_indicator_120mhz <= 0;
+		out_ready_120mhz <= 0;
 	end else begin
 		if (rxd)
 			start_bit_cnt <= 0;
@@ -101,13 +99,14 @@ always @(posedge clk_120mhz) begin
 				bit_in_byte_cnt <= 1;
 				cycle_in_bit_cnt <= 0;
 			end
+			out_ready_120mhz <= 0;
 		end else begin
 			if (cycle_in_bit_cnt == CYCLES_PER_BIT-1) begin
 				if (bit_in_byte_cnt == BYTE_LEN + 1) begin
 					// rxd should be high at this point
 					// but we can't do anything about it otherwise
-					curr_byte_buffer_120mhz <= curr_byte_shifted;
-					new_byte_indicator_120mhz <= ~new_byte_indicator_120mhz;
+					out_120mhz <= curr_byte_shifted;
+					out_ready_120mhz <= 1;
 					bit_in_byte_cnt <= 0;
 				end else begin
 					bit_in_byte_cnt <= bit_in_byte_cnt + 1;
@@ -127,29 +126,16 @@ endmodule
 module uart_tx_fast_stream_driver(
 	input clk, clk_120mhz, reset, start,
 	input in_ready, input [7:0] in,
-	output txd,
-	output ready);
+	output txd, output ready);
 
 wire driv_ready;
 uart_tx_fast_driver uart_driv_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
 	.in_ready(in_ready), .in(in), .txd(txd), .ready(driv_ready));
 
-// "start" is treated like an abort, so everything is reset.
-wire driv_ready_pulse;
-pulse_generator driv_ready_pg(
-	.clk(clk), .reset(reset || start), .in(driv_ready),
-	.out(driv_ready_pulse));
-
-// Initially, the driver should be ready and driv_ready should
-// be asserted, and waiting_for_data will be deasserted.
-// The pulse generator emits a pulse on the falling edge of reset
-// since driv_ready would be asserted.
-// Then we wait for data to arrive. When data arrives with in_ready,
-// we deassert waiting_for_data. We will send out the next ready pulse on
-// the rising edge of driv_ready.
+// Wait for data to arrive before checking ready
 reg waiting_for_data = 0;
-assign ready = waiting_for_data ? 0 : driv_ready_pulse;
+assign ready = waiting_for_data ? 0 : driv_ready;
 
 always @(posedge clk) begin
 	if (reset || start)
@@ -172,7 +158,7 @@ module uart_tx_fast_driver #(
 	input [7:0] in,
 	output txd,
 	// ready is asserted to request for a new byte to transmit
-	output reg ready = 1);
+	output ready);
 
 `include "params.vh"
 
@@ -187,40 +173,36 @@ assign txd = curr_byte_shifted[0];
 // allow bits_left_cnt to go to BYTE_LEN + 2 to send start/stop bits
 reg [clog2(BYTE_LEN+2)-1:0] bits_left_cnt = 0;
 
-reg [BYTE_LEN-1:0] new_byte_buffer;
-// new_byte_indicator is flipped when a new byte is to be sent
-// when the 120mhz side buffers it, it flips new_byte_indicator_120mhz
-// to indicate that it is ready for another byte
-reg new_byte_indicator_120mhz = 0;
-reg new_byte_indicator = 0;
-// when 120mhz side has caught up, it is ready for the next byte
-// buffer it to keep boundary path short
-wire ready_120mhz;
-assign ready_120mhz = new_byte_indicator_120mhz == new_byte_indicator;
+wire [BYTE_LEN-1:0] in_120mhz;
+wire in_ready_120mhz;
 
-always @(posedge clk) begin
-	if (reset) begin
-		new_byte_indicator <= 0;
-		ready <= 1;
-	end else if (in_ready) begin
-		new_byte_buffer <= in;
-		new_byte_indicator <= ~new_byte_indicator;
-		ready <= 0;
-	end else
-		ready <= ready_120mhz;
-end
+wire fifo_empty, fifo_full, fifo_rden;
+assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
+small_sync_fifo data_fifo(
+	.rst(reset),
+	.wr_clk(clk), .rd_clk(clk_120mhz),
+	.din(in), .wr_en(in_ready),
+	.rd_en(fifo_rden), .dout(in_120mhz),
+	.full(fifo_full), .empty(fifo_empty));
+delay fifo_read_delay(
+	.clk(clk_120mhz), .in(fifo_rden), .out(in_ready_120mhz));
+// delay tx_clk by one cycle to account for fifo read time
+wire tx_clk_delayed;
+delay tx_clk_delay(
+	.clk(clk_120mhz), .in(tx_clk), .out(tx_clk_delayed));
 
+assign ready = !fifo_full;
+
+reg reset_buf = 0;
 always @(posedge clk_120mhz) begin
-	if (reset) begin
+	reset_buf <= reset;
+	if (reset_buf) begin
 		bits_left_cnt <= 0;
-		new_byte_indicator_120mhz <= 0;
 		curr_byte_shifted <= ~0;
-	end else if (tx_clk) begin
-		if (bits_left_cnt == 0 &&
-				new_byte_indicator_120mhz != new_byte_indicator) begin
-			new_byte_indicator_120mhz <= ~new_byte_indicator_120mhz;
+	end else if (tx_clk_delayed) begin
+		if (bits_left_cnt == 0 && in_ready_120mhz) begin
 			bits_left_cnt <= BYTE_LEN + 2 - 1;
-			curr_byte_shifted <= {1'b1, new_byte_buffer, 1'b0};
+			curr_byte_shifted <= {1'b1, in_120mhz, 1'b0};
 		end else begin
 			if (bits_left_cnt != 0)
 				bits_left_cnt <= bits_left_cnt - 1;

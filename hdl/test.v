@@ -279,7 +279,7 @@ end
 
 endmodule
 
-module test_uart_to_ram();
+module test_fast_uart();
 
 `include "params.vh"
 

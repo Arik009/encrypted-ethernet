@@ -155,7 +155,7 @@ wire clk_50mhz;
 wire clk;
 assign clk = clk_50mhz;
 
-wire clk_120mhz;
+wire clk_120mhz, clk_65mhz;
 
 // 50MHz clock for Ethernet receiving
 clk_wiz_0 clk_wiz_inst(
@@ -198,22 +198,37 @@ assign LED17_R = BTNL;
 assign LED17_G = BTNC;
 assign LED17_B = BTNR;
 
-wire [10:0] hcount;
-wire [9:0] vcount;
+wire [clog2(VGA_WIDTH)-1:0] vga_x;
+wire [clog2(VGA_HEIGHT)-1:0] vga_y;
 wire hsync, vsync, blank;
 
 xvga xvga_inst(
-	.vclock(clk), .hcount(hcount), .vcount(vcount),
+	.vclock(clk), .hcount(vga_x), .vcount(vga_y),
 	.hsync(hsync), .vsync(vsync), .blank(blank));
 
 wire [3:0] vga_r, vga_g, vga_b;
-assign {vga_r, vga_g, vga_b} = 0;
-assign VGA_R = ~blank ? vga_r : 0;
-assign VGA_G = ~blank ? vga_g : 0;
-assign VGA_B = ~blank ? vga_b : 0;
+assign vga_r = vga_x[7:4];
+assign vga_g = vga_y[7:4];
+assign vga_b = ~0;
 
-assign VGA_HS = ~hsync;
-assign VGA_VS = ~vsync;
+wire [3:0] vga_r_out, vga_g_out, vga_b_out;
+assign vga_r_out = blank ? 0 : vga_r;
+assign vga_g_out = blank ? 0 : vga_g;
+assign vga_b_out = blank ? 0 : vga_b;
+assign vga_hs_out = hsync ^ VGA_POLARITY;
+assign vga_vs_out = vsync ^ VGA_POLARITY;
+
+// buffer all outputs
+delay #(.DATA_WIDTH(4)) vga_r_sync(
+	.clk(clk), .in(vga_r_out), .out(VGA_R));
+delay #(.DATA_WIDTH(4)) vga_g_sync(
+	.clk(clk), .in(vga_g_out), .out(VGA_G));
+delay #(.DATA_WIDTH(4)) vga_b_sync(
+	.clk(clk), .in(vga_b_out), .out(VGA_B));
+delay vga_hs_sync(
+	.clk(clk), .in(vga_hs_out), .out(VGA_HS));
+delay vga_vs_sync(
+	.clk(clk), .in(vga_vs_out), .out(VGA_VS));
 
 assign UART_CTS = 1;
 
@@ -231,7 +246,6 @@ pulse_generator pg_btnl(
 wire ram_read_req, ram_read_ready, ram_write_enable;
 wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
 wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
-wire [BYTE_LEN-1:0] ram_read_out;
 packet_buffer_ram_driver ram_driv_inst(
 	.clk(clk), .reset(reset),
 	.read_req(ram_read_req), .read_addr(ram_read_addr),
@@ -350,9 +364,91 @@ assign hex_display_data = {
 };
 
 assign JB = {
-	6'h0,
-	UART_TXD_IN
+	8'h0
 };
+
+endmodule
+
+module main_test_vga (
+	input CLK100MHZ,
+	input [15:0] SW,
+	input BTNC, BTNU, BTNL, BTNR, BTND,
+	output [7:0] JB,
+	output [3:0] VGA_R,
+	output [3:0] VGA_B,
+	output [3:0] VGA_G,
+	output VGA_HS,
+	output VGA_VS,
+	output LED16_B, LED16_G, LED16_R,
+	output LED17_B, LED17_G, LED17_R,
+	output [15:0] LED,
+	output [7:0] SEG,  // segments A-G (0-6), DP (7)
+	output [7:0] AN,	// Display 0-7
+	inout ETH_CRSDV, ETH_RXERR,
+	inout [1:0] ETH_RXD,
+	output ETH_REFCLK, ETH_INTN, ETH_RSTN,
+	input UART_TXD_IN, UART_RTS,
+	output UART_RXD_OUT, UART_CTS,
+	output ETH_TXEN,
+	output [1:0] ETH_TXD,
+	output ETH_MDC, ETH_MDIO,
+	inout [15:0] ddr2_dq,
+	inout [1:0] ddr2_dqs_n, ddr2_dqs_p,
+	output [12:0] ddr2_addr,
+	output [2:0] ddr2_ba,
+	output ddr2_ras_n, ddr2_cas_n, ddr2_we_n,
+	output [0:0] ddr2_ck_p, ddr2_ck_n, ddr2_cke, ddr2_cs_n,
+	output [1:0] ddr2_dm,
+	output [0:0] ddr2_odt
+	);
+
+`include "params.vh"
+
+wire clk_50mhz;
+
+// the main clock for FPGA logic will be 50MHz
+wire clk;
+assign clk = clk_50mhz;
+
+wire clk_65mhz;
+
+// 50MHz clock for Ethernet receiving
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(CLK100MHZ),
+	.clk_out1(clk_50mhz),
+	.clk_out4(clk_65mhz));
+
+wire [clog2(VGA_WIDTH)-1:0] vga_x;
+wire [clog2(VGA_HEIGHT)-1:0] vga_y;
+wire hsync, vsync, blank;
+
+xvga xvga_inst(
+	.vclock(clk), .hcount(vga_x), .vcount(vga_y),
+	.hsync(hsync), .vsync(vsync), .blank(blank));
+
+wire [3:0] vga_r, vga_g, vga_b;
+assign vga_r = vga_x[7:4];
+assign vga_g = vga_y[7:4];
+assign vga_b = ~0;
+
+wire [3:0] vga_r_out, vga_g_out, vga_b_out;
+assign vga_r_out = ~blank ? vga_r : 0;
+assign vga_g_out = ~blank ? vga_g : 0;
+assign vga_b_out = ~blank ? vga_b : 0;
+assign vga_hs_out = hsync ^ VGA_POLARITY;
+assign vga_vs_out = vsync ^ VGA_POLARITY;
+
+delay #(.DATA_WIDTH(4)) vga_r_sync(
+	.clk(clk), .in(vga_r_out), .out(VGA_R));
+delay #(.DATA_WIDTH(4)) vga_g_sync(
+	.clk(clk), .in(vga_g_out), .out(VGA_G));
+delay #(.DATA_WIDTH(4)) vga_b_sync(
+	.clk(clk), .in(vga_b_out), .out(VGA_B));
+delay vga_hs_sync(
+	.clk(clk), .in(vga_hs_out), .out(VGA_HS));
+delay vga_vs_sync(
+	.clk(clk), .in(vga_vs_out), .out(VGA_VS));
 
 endmodule
 
