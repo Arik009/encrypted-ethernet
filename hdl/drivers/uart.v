@@ -69,7 +69,7 @@ reg [BYTE_LEN-1:0] out_120mhz;
 
 wire fifo_empty, fifo_rden;
 assign fifo_rden = !fifo_empty;
-small_sync_fifo data_fifo(
+byte_stream_fifo data_fifo(
 	.rst(reset),
 	.wr_clk(clk_120mhz), .rd_clk(clk),
 	.din(out_120mhz), .wr_en(out_ready_120mhz),
@@ -77,12 +77,13 @@ small_sync_fifo data_fifo(
 	.empty(fifo_empty));
 delay fifo_read_delay(
 	.clk(clk), .in(fifo_rden), .out(out_ready));
+wire reset_120mhz;
+reset_stream_fifo reset_fifo_inst(
+	.clka(clk), .clkb(clk_120mhz),
+	.reseta(reset), .resetb(reset_120mhz));
 
-// buffer signals to meet timing constraints
-reg reset_buf = 0;
 always @(posedge clk_120mhz) begin
-	reset_buf <= reset;
-	if (reset_buf) begin
+	if (reset_120mhz) begin
 		bit_in_byte_cnt <= 0;
 		start_bit_cnt <= 0;
 		out_ready_120mhz <= 0;
@@ -178,7 +179,7 @@ wire in_ready_120mhz;
 
 wire fifo_empty, fifo_full, fifo_rden;
 assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
-small_sync_fifo data_fifo(
+byte_stream_fifo data_fifo(
 	.rst(reset),
 	.wr_clk(clk), .rd_clk(clk_120mhz),
 	.din(in), .wr_en(in_ready),
@@ -186,6 +187,10 @@ small_sync_fifo data_fifo(
 	.full(fifo_full), .empty(fifo_empty));
 delay fifo_read_delay(
 	.clk(clk_120mhz), .in(fifo_rden), .out(in_ready_120mhz));
+wire reset_120mhz;
+reset_stream_fifo reset_fifo_inst(
+	.clka(clk), .clkb(clk_120mhz),
+	.reseta(reset), .resetb(reset_120mhz));
 // delay tx_clk by one cycle to account for fifo read time
 wire tx_clk_delayed;
 delay tx_clk_delay(
@@ -193,10 +198,8 @@ delay tx_clk_delay(
 
 assign ready = !fifo_full;
 
-reg reset_buf = 0;
 always @(posedge clk_120mhz) begin
-	reset_buf <= reset;
-	if (reset_buf) begin
+	if (reset_120mhz) begin
 		bits_left_cnt <= 0;
 		curr_byte_shifted <= ~0;
 	end else if (tx_clk_delayed) begin

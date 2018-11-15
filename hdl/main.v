@@ -147,8 +147,6 @@ module main(
 
 `include "params.vh"
 
-parameter RAM_SIZE = PACKET_BUFFER_SIZE;
-
 wire clk_50mhz;
 
 // the main clock for FPGA logic will be 50MHz
@@ -200,21 +198,16 @@ assign LED17_B = BTNR;
 
 wire [clog2(VGA_WIDTH)-1:0] vga_x;
 wire [clog2(VGA_HEIGHT)-1:0] vga_y;
-wire hsync, vsync, blank;
+// allow for hsync and vsync to be delayed before sending on wire
+wire hsync, vsync, hsync_predelay, vsync_predelay, blank;
 
 xvga xvga_inst(
 	.vclock(clk), .hcount(vga_x), .vcount(vga_y),
-	.hsync(hsync), .vsync(vsync), .blank(blank));
-
-wire [3:0] vga_r, vga_g, vga_b;
-assign vga_r = vga_x[7:4];
-assign vga_g = vga_y[7:4];
-assign vga_b = ~0;
+	.hsync(hsync_predelay), .vsync(vsync_predelay), .blank(blank));
 
 wire [3:0] vga_r_out, vga_g_out, vga_b_out;
-assign vga_r_out = blank ? 0 : vga_r;
-assign vga_g_out = blank ? 0 : vga_g;
-assign vga_b_out = blank ? 0 : vga_b;
+wire [COLOR_LEN-1:0] vga_col;
+assign {vga_r_out, vga_g_out, vga_b_out} = vga_col;
 assign vga_hs_out = hsync ^ VGA_POLARITY;
 assign vga_vs_out = vsync ^ VGA_POLARITY;
 
@@ -244,7 +237,7 @@ pulse_generator pg_btnl(
 	.clk(clk), .reset(reset), .in(btnl_raw), .out(btnl));
 
 wire ram_read_req, ram_read_ready, ram_write_enable;
-wire [clog2(RAM_SIZE)-1:0] ram_read_addr, ram_write_addr;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] ram_read_addr, ram_write_addr;
 wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
 packet_buffer_ram_driver ram_driv_inst(
 	.clk(clk), .reset(reset),
@@ -254,11 +247,22 @@ packet_buffer_ram_driver ram_driv_inst(
 	.write_val(ram_write_val),
 	.read_ready(ram_read_ready), .read_out(ram_read_out));
 
+wire vram_read_req, vram_read_ready, vram_write_enable;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_read_addr, vram_write_addr;
+wire [COLOR_LEN-1:0] vram_read_out, vram_write_val;
+video_cache_ram_driver vram_driv_inst(
+	.clk(clk), .reset(reset),
+	.read_req(vram_read_req), .read_addr(vram_read_addr),
+	.write_enable(vram_write_enable),
+	.write_addr(vram_write_addr),
+	.write_val(vram_write_val),
+	.read_ready(vram_read_ready), .read_out(vram_read_out));
+
 wire uart_ram_write_enable;
-wire [clog2(RAM_SIZE)-1:0] uart_ram_write_addr;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] uart_ram_write_addr;
 wire [BYTE_LEN-1:0] uart_ram_write_val;
 wire eth_ram_write_enable;
-wire [clog2(RAM_SIZE)-1:0] eth_ram_write_addr;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] eth_ram_write_addr;
 wire [BYTE_LEN-1:0] eth_ram_write_val;
 assign ram_write_enable =
 	config_transmit ? uart_ram_write_enable : eth_ram_write_enable;
@@ -291,11 +295,32 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .reset(reset), .start(uart_sfm_start),
-	.read_start(0), .read_end(RAM_SIZE),
+	.read_start(0), .read_end(PACKET_BUFFER_SIZE),
 	.ready(uart_tx_ready),
 	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
 	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
 	.out_ready(uart_tx_in_ready), .out(uart_tx_in));
+
+wire btc_vram_outclk;
+wire [COLOR_LEN-1:0] btc_vram_out;
+bytes_to_colors btc_vram(
+	.clk(clk), .reset(reset), .inclk(uart_rx_out_ready), .in(uart_rx_out),
+	.outclk(btc_vram_outclk), .out(btc_vram_out));
+stream_to_memory
+	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
+	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
+	.in_ready(btc_vram_outclk), .in(btc_vram_out),
+	.write_req(vram_write_enable), .write_addr(vram_write_addr),
+	.write_val(vram_write_val));
+
+graphics_main graphics_main_inst(
+	.clk(clk), .reset(reset), .blank(blank),
+	.vga_x(vga_x), .vga_y(vga_y),
+	.vga_hsync_in(hsync_predelay), .vga_vsync_in(vsync_predelay),
+	.ram_read_ready(vram_read_ready), .ram_read_val(vram_read_out),
+	.ram_read_req(vram_read_req), .ram_read_addr(vram_read_addr),
+	.vga_col(vga_col),
+	.vga_hsync_out(hsync), .vga_vsync_out(vsync));
 
 assign ETH_REFCLK = clk;
 assign ETH_MDC = 0;

@@ -390,3 +390,60 @@ initial begin
 end
 
 endmodule
+
+module test_bytes_to_colors();
+
+`include "params.vh"
+
+reg clk = 0;
+// 50MHz clock
+initial forever #10 clk = ~clk;
+
+reg reset = 1;
+reg btc_inclk = 0;
+wire [BYTE_LEN-1:0] btc_in;
+wire btc_outclk;
+wire [COLOR_LEN-1:0] btc_out;
+
+bytes_to_colors btc_inst(
+	.clk(clk), .reset(reset), .inclk(btc_inclk), .in(btc_in),
+	.outclk(btc_outclk), .out(btc_out));
+reg [4*COLOR_LEN-1:0] in_data_shifted = 48'hDEADBEEFCAFE;
+assign btc_in = in_data_shifted[0+:BYTE_LEN];
+
+wire vram_read_req, vram_read_ready, vram_write_enable;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_read_addr, vram_write_addr;
+wire [COLOR_LEN-1:0] vram_read_out, vram_write_val;
+video_cache_ram_driver vram_driv_inst(
+	.clk(clk), .reset(reset),
+	.read_req(vram_read_req), .read_addr(vram_read_addr),
+	.write_enable(vram_write_enable),
+	.write_addr(vram_write_addr),
+	.write_val(vram_write_val),
+	.read_ready(vram_read_ready), .read_out(vram_read_out));
+stream_to_memory
+	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
+	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
+	.in_ready(btc_outclk), .in(btc_out),
+	.write_req(vram_write_enable), .write_addr(vram_write_addr),
+	.write_val(vram_write_val));
+assign vram_read_req = 0;
+assign vram_read_addr = 0;
+
+always @(posedge clk) begin
+	if (btc_inclk)
+		in_data_shifted <= {in_data_shifted[0+:BYTE_LEN],
+			in_data_shifted[BYTE_LEN+:BYTE_LEN]};
+end
+
+initial begin
+	#100
+	reset = 0;
+	#100
+	btc_inclk = 1;
+	#(6 * 20)
+	#100
+	$stop();
+end
+
+endmodule

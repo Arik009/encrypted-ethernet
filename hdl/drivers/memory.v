@@ -1,3 +1,25 @@
+module video_cache_ram_driver #(
+	parameter RAM_SIZE = VIDEO_CACHE_RAM_SIZE,
+	parameter READ_LATENCY = VIDEO_CACHE_RAM_LATENCY) (
+	input clk, reset,
+	input read_req, input [clog2(RAM_SIZE)-1:0] read_addr,
+	input write_enable,
+	input [clog2(RAM_SIZE)-1:0] write_addr,
+	input [COLOR_LEN-1:0] write_val,
+	output read_ready, output [COLOR_LEN-1:0] read_out
+	);
+
+`include "params.vh"
+
+delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
+	.clk(clk), .in(read_req), .out(read_ready));
+video_cache_ram video_cache_ram_inst(
+	.clka(clk), .wea(write_enable),
+	.addra(write_addr), .dina(write_val),
+	.clkb(clk), .addrb(read_addr), .doutb(read_out));
+
+endmodule
+
 module packet_synth_rom_driver #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE,
 	parameter READ_LATENCY = PACKET_SYNTH_ROM_LATENCY) (

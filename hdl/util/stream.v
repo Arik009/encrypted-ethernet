@@ -202,16 +202,17 @@ endmodule
 // create a memory write stream
 // for testing purposes
 module stream_to_memory #(
-	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE,
+	parameter WORD_LEN = BYTE_LEN) (
 	input clk, reset,
 	// used to set the offset for a new write stream
 	input set_offset_req,
 	input [clog2(RAM_SIZE)-1:0] set_offset_val,
 	input in_ready,
-	input [BYTE_LEN-1:0] in,
+	input [WORD_LEN-1:0] in,
 	output reg write_req = 0,
 	output reg [clog2(RAM_SIZE)-1:0] write_addr,
-	output reg [BYTE_LEN-1:0] write_val);
+	output reg [WORD_LEN-1:0] write_val);
 
 `include "params.vh"
 

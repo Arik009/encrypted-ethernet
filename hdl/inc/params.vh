@@ -13,6 +13,9 @@ localparam PACKET_BUFFER_READ_LATENCY = 2;
 localparam PACKET_SYNTH_ROM_SIZE = 4096;
 localparam PACKET_SYNTH_ROM_LATENCY = 2;
 
+localparam VIDEO_CACHE_RAM_SIZE = 4096;
+localparam VIDEO_CACHE_RAM_LATENCY = 2;
+
 localparam VGA_WIDTH = 800;
 localparam VGA_HEIGHT = 600;
 localparam VGA_H_FRONT_PORCH = 56;
