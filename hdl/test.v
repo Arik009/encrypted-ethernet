@@ -350,25 +350,25 @@ packet_buffer_ram_driver ram_driv_inst(
 
 wire uart_rxd;
 wire [7:0] uart_out;
-wire uart_out_ready;
+wire uart_outclk;
 uart_rx_fast_driver uart_rx_inst (
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
-	.rxd(uart_rxd), .out(uart_out), .out_ready(uart_out_ready));
+	.rxd(uart_rxd), .out(uart_out), .outclk(uart_outclk));
 stream_to_memory uart_stm_inst(
 	.clk(clk), .reset(reset),
 	.set_offset_req(1'b0), .set_offset_val(0),
-	.in_ready(uart_out_ready), .in(uart_out),
+	.inclk(uart_outclk), .in(uart_out),
 	.write_req(ram_write_enable), .write_addr(ram_write_addr),
 	.write_val(ram_write_val));
 
 reg sfm_start = 0;
 
-wire uart_in_ready;
+wire uart_inclk;
 wire [BYTE_LEN-1:0] uart_in;
 wire uart_txd, uart_tx_ready;
 uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset), .start(sfm_start),
-	.in_ready(uart_in_ready), .in(uart_in), .txd(uart_txd),
+	.inclk(uart_inclk), .in(uart_in), .txd(uart_txd),
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .reset(reset), .start(sfm_start),
@@ -376,7 +376,7 @@ stream_from_memory uart_sfm_inst(
 	.ready(uart_tx_ready),
 	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
 	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
-	.out_ready(uart_in_ready), .out(uart_in));
+	.outclk(uart_inclk), .out(uart_in));
 
 reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
 assign uart_rxd = test_data[31];
@@ -456,7 +456,7 @@ video_cache_ram_driver vram_driv_inst(
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
 	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
-	.in_ready(btc_outclk), .in(btc_out),
+	.inclk(btc_outclk), .in(btc_out),
 	.write_req(vram_write_enable), .write_addr(vram_write_addr),
 	.write_val(vram_write_val));
 assign vram_read_req = 0;

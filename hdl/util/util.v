@@ -2,7 +2,7 @@ module delay #(
 	// number of delay cycles
 	parameter DELAY_LEN = 1,
 	parameter DATA_WIDTH = 1) (
-	input clk, [DATA_WIDTH-1:0] in,
+	input clk, reset, [DATA_WIDTH-1:0] in,
 	output [DATA_WIDTH-1:0] out);
 
 reg [DELAY_LEN*DATA_WIDTH-1:0] queue;
@@ -10,7 +10,9 @@ assign out = queue[0+:DATA_WIDTH];
 
 always @ (posedge clk)
 begin
-	if (DELAY_LEN == 1)
+	if (reset)
+		queue <= 0;
+	else if (DELAY_LEN == 1)
 		queue <= in;
 	else
 		queue <= {in, queue[DATA_WIDTH+:(DELAY_LEN-1)*DATA_WIDTH]};
@@ -48,7 +50,7 @@ module sync_debounce (
 
 wire synced;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) delay_inst(
-	.clk(clk), .in(in), .out(synced));
+	.clk(clk), .reset(reset), .in(in), .out(synced));
 debounce debounce_inst(
 	.reset(reset), .clk(clk), .noisy(synced), .clean(out));
 
@@ -135,6 +137,23 @@ always @(posedge clk) begin
 		cnt <= 0;
 	else
 		cnt <= cnt + 1;
+end
+
+endmodule
+
+module single_word_buffer #(
+	parameter DATA_WIDTH = 1) (
+	input clk, reset, clear, inclk, input [DATA_WIDTH-1:0] in,
+	output reg empty = 1, output reg [DATA_WIDTH-1:0] out);
+
+always @(posedge clk) begin
+	if (reset)
+		empty <= 1;
+	else if (inclk) begin
+		empty <= 1;
+		out <= in;
+	end else if (clear)
+		empty <= 0;
 end
 
 endmodule

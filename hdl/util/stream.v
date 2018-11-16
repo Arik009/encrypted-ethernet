@@ -11,7 +11,8 @@ module dibits_to_bytes(
 
 `include "params.vh"
 
-delay #(.DELAY_LEN(1)) done_delay(.clk(clk), .in(done_in), .out(done_out));
+delay #(.DELAY_LEN(1)) done_delay(
+	.clk(clk), .reset(reset), .in(done_in), .out(done_out));
 
 // scratch space to shift dibits in
 reg [BYTE_LEN-3:0] shifted;
@@ -151,12 +152,12 @@ module stream_from_memory #(
 	input [BYTE_LEN-1:0] ram_read_out,
 	output reg ram_read_req = 0,
 	output reg [clog2(RAM_SIZE)-1:0] ram_read_addr,
-	output out_ready,
+	output outclk,
 	output [BYTE_LEN-1:0] out);
 
 `include "params.vh"
 
-assign out_ready = ram_read_ready;
+assign outclk = ram_read_ready;
 assign out = ram_read_out;
 
 // save read_end so that it can be changed after start
@@ -208,8 +209,7 @@ module stream_to_memory #(
 	// used to set the offset for a new write stream
 	input set_offset_req,
 	input [clog2(RAM_SIZE)-1:0] set_offset_val,
-	input in_ready,
-	input [WORD_LEN-1:0] in,
+	input inclk, input [WORD_LEN-1:0] in,
 	output reg write_req = 0,
 	output reg [clog2(RAM_SIZE)-1:0] write_addr,
 	output reg [WORD_LEN-1:0] write_val);
@@ -224,10 +224,10 @@ always @(posedge clk) begin
 	end else begin
 		if (set_offset_req)
 			curr_addr <= set_offset_val;
-		else if (in_ready)
+		else if (inclk)
 			curr_addr <= curr_addr + 1;
 
-		if (in_ready) begin
+		if (inclk) begin
 			write_req <= 1;
 			write_addr <= curr_addr;
 			write_val <= in;

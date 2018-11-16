@@ -20,3 +20,4 @@
 # Generated files
 /coe/*.coe
 /laptop-src/dump.log
+/hdl/inc/packet_synth_rom_layout.vh

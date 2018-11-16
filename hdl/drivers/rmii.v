@@ -40,10 +40,10 @@ wire [1:0] rxd;
 
 // assertion of CRS_DV is async wrt the REF_CLK, so synchronization needed
 delay #(.DELAY_LEN(SYNC_DELAY_LEN-1)) crsdv_sync(
-	.clk(clk), .in(crsdv_in), .out(crsdv));
+	.clk(clk), .reset(reset), .in(crsdv_in), .out(crsdv));
 // delay rxd to be in time with crsdv
 delay #(.DELAY_LEN(SYNC_DELAY_LEN-1), .DATA_WIDTH(2)) rxd_sync(
-	.clk(clk), .in(rxd_in), .out(rxd));
+	.clk(clk), .reset(reset), .in(rxd_in), .out(rxd));
 
 localparam STATE_IDLE = 2'b00;
 localparam STATE_WAITING = 2'b01;

@@ -164,9 +164,9 @@ clk_wiz_0 clk_wiz_inst(
 
 wire sw0, sw1;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
-	.clk(clk), .in(SW[0]), .out(sw0));
+	.clk(clk), .reset(0), .in(SW[0]), .out(sw0));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
-	.clk(clk), .in(SW[1]), .out(sw1));
+	.clk(clk), .reset(0), .in(SW[1]), .out(sw1));
 
 wire config_transmit;
 assign config_transmit = sw1;
@@ -176,9 +176,13 @@ always @(posedge clk) begin
 	prev_sw1 <= sw1;
 end
 
-wire reset;
 // reset device when configuration is changed
-assign reset = sw0 || (sw1 != prev_sw1);
+wire config_change_reset;
+assign config_change_reset = sw1 != prev_sw1;
+
+// ensure that reset pulse lasts a sufficient long amount of time
+pulse_extender reset_pe(
+	.clk(clk), .reset(0), .in(sw0 || config_change_reset), .out(reset));
 
 wire [31:0] hex_display_data;
 wire [6:0] segments;
@@ -213,15 +217,15 @@ assign vga_vs_out = vsync ^ VGA_POLARITY;
 
 // buffer all outputs
 delay #(.DATA_WIDTH(4)) vga_r_sync(
-	.clk(clk), .in(vga_r_out), .out(VGA_R));
+	.clk(clk), .reset(reset), .in(vga_r_out), .out(VGA_R));
 delay #(.DATA_WIDTH(4)) vga_g_sync(
-	.clk(clk), .in(vga_g_out), .out(VGA_G));
+	.clk(clk), .reset(reset), .in(vga_g_out), .out(VGA_G));
 delay #(.DATA_WIDTH(4)) vga_b_sync(
-	.clk(clk), .in(vga_b_out), .out(VGA_B));
+	.clk(clk), .reset(reset), .in(vga_b_out), .out(VGA_B));
 delay vga_hs_sync(
-	.clk(clk), .in(vga_hs_out), .out(VGA_HS));
+	.clk(clk), .reset(reset), .in(vga_hs_out), .out(VGA_HS));
 delay vga_vs_sync(
-	.clk(clk), .in(vga_vs_out), .out(VGA_VS));
+	.clk(clk), .reset(reset), .in(vga_vs_out), .out(VGA_VS));
 
 assign UART_CTS = 1;
 
@@ -272,18 +276,18 @@ assign ram_write_val =
 	config_transmit ? uart_ram_write_val : eth_ram_write_val;
 
 wire [7:0] uart_rx_out;
-wire uart_rx_out_ready;
+wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst (
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
-	.rxd(UART_TXD_IN), .out(uart_rx_out), .out_ready(uart_rx_out_ready));
+	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 stream_to_memory uart_stm_inst(
 	.clk(clk), .reset(reset),
 	.set_offset_req(1'b0), .set_offset_val(0),
-	.in_ready(uart_rx_out_ready), .in(uart_rx_out),
+	.inclk(uart_rx_outclk), .in(uart_rx_out),
 	.write_req(uart_ram_write_enable), .write_addr(uart_ram_write_addr),
 	.write_val(uart_ram_write_val));
 
-wire uart_tx_in_ready, uart_tx_ready;
+wire uart_tx_inclk, uart_tx_ready;
 wire [BYTE_LEN-1:0] uart_tx_in;
 wire uart_txd;
 wire uart_sfm_start;
@@ -291,7 +295,7 @@ assign uart_sfm_start = btnc;
 uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
 	.start(uart_sfm_start),
-	.in_ready(uart_tx_in_ready), .in(uart_tx_in), .txd(UART_RXD_OUT),
+	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .reset(reset), .start(uart_sfm_start),
@@ -299,17 +303,17 @@ stream_from_memory uart_sfm_inst(
 	.ready(uart_tx_ready),
 	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
 	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
-	.out_ready(uart_tx_in_ready), .out(uart_tx_in));
+	.outclk(uart_tx_inclk), .out(uart_tx_in));
 
 wire btc_vram_outclk;
 wire [COLOR_LEN-1:0] btc_vram_out;
 bytes_to_colors btc_vram(
-	.clk(clk), .reset(reset), .inclk(uart_rx_out_ready), .in(uart_rx_out),
+	.clk(clk), .reset(reset), .inclk(uart_rx_outclk), .in(uart_rx_out),
 	.outclk(btc_vram_outclk), .out(btc_vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
 	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
-	.in_ready(btc_vram_outclk), .in(btc_vram_out),
+	.inclk(btc_vram_outclk), .in(btc_vram_out),
 	.write_req(vram_write_enable), .write_addr(vram_write_addr),
 	.write_val(vram_write_val));
 
@@ -367,9 +371,9 @@ packet_synth packet_synth_inst(
 // buffer the outputs so that eth_txd calculation would be
 // under timing constraints
 delay eth_txen_delay(
-	.clk(clk), .in(eth_txen), .out(ETH_TXEN));
+	.clk(clk), .reset(reset), .in(eth_txen), .out(ETH_TXEN));
 delay #(.DATA_WIDTH(2)) eth_txd_delay(
-	.clk(clk), .in(eth_txd), .out(ETH_TXD));
+	.clk(clk), .reset(reset), .in(eth_txd), .out(ETH_TXD));
 
 // DEBUGGING SIGNALS
 
@@ -465,15 +469,15 @@ assign vga_hs_out = hsync ^ VGA_POLARITY;
 assign vga_vs_out = vsync ^ VGA_POLARITY;
 
 delay #(.DATA_WIDTH(4)) vga_r_sync(
-	.clk(clk), .in(vga_r_out), .out(VGA_R));
+	.clk(clk), .reset(reset), .in(vga_r_out), .out(VGA_R));
 delay #(.DATA_WIDTH(4)) vga_g_sync(
-	.clk(clk), .in(vga_g_out), .out(VGA_G));
+	.clk(clk), .reset(reset), .in(vga_g_out), .out(VGA_G));
 delay #(.DATA_WIDTH(4)) vga_b_sync(
-	.clk(clk), .in(vga_b_out), .out(VGA_B));
+	.clk(clk), .reset(reset), .in(vga_b_out), .out(VGA_B));
 delay vga_hs_sync(
-	.clk(clk), .in(vga_hs_out), .out(VGA_HS));
+	.clk(clk), .reset(reset), .in(vga_hs_out), .out(VGA_HS));
 delay vga_vs_sync(
-	.clk(clk), .in(vga_vs_out), .out(VGA_VS));
+	.clk(clk), .reset(reset), .in(vga_vs_out), .out(VGA_VS));
 
 endmodule
 

@@ -50,8 +50,7 @@ module uart_rx_fast_driver #(
 	parameter CYCLES_PER_BIT = 10) (
 	input clk, clk_120mhz, reset,
 	input rxd,
-	output [7:0] out,
-	output out_ready);
+	output [7:0] out, output outclk);
 
 `include "params.vh"
 
@@ -64,7 +63,7 @@ reg [clog2(CYCLES_PER_BIT)-1:0] cycle_in_bit_cnt = 0;
 // allow bit_in_byte_cnt to go to BYTE_LEN + 2 to detect start/stop bit
 reg [clog2(BYTE_LEN+2)-1:0] bit_in_byte_cnt = 0;
 
-reg out_ready_120mhz = 0;
+reg outclk_120mhz = 0;
 reg [BYTE_LEN-1:0] out_120mhz;
 
 wire fifo_empty, fifo_rden;
@@ -72,11 +71,11 @@ assign fifo_rden = !fifo_empty;
 byte_stream_fifo data_fifo(
 	.rst(reset),
 	.wr_clk(clk_120mhz), .rd_clk(clk),
-	.din(out_120mhz), .wr_en(out_ready_120mhz),
+	.din(out_120mhz), .wr_en(outclk_120mhz),
 	.rd_en(fifo_rden), .dout(out),
 	.empty(fifo_empty));
 delay fifo_read_delay(
-	.clk(clk), .in(fifo_rden), .out(out_ready));
+	.clk(clk), .reset(reset), .in(fifo_rden), .out(outclk));
 wire reset_120mhz;
 reset_stream_fifo reset_fifo_inst(
 	.clka(clk), .clkb(clk_120mhz),
@@ -86,7 +85,7 @@ always @(posedge clk_120mhz) begin
 	if (reset_120mhz) begin
 		bit_in_byte_cnt <= 0;
 		start_bit_cnt <= 0;
-		out_ready_120mhz <= 0;
+		outclk_120mhz <= 0;
 	end else begin
 		if (rxd)
 			start_bit_cnt <= 0;
@@ -100,14 +99,14 @@ always @(posedge clk_120mhz) begin
 				bit_in_byte_cnt <= 1;
 				cycle_in_bit_cnt <= 0;
 			end
-			out_ready_120mhz <= 0;
+			outclk_120mhz <= 0;
 		end else begin
 			if (cycle_in_bit_cnt == CYCLES_PER_BIT-1) begin
 				if (bit_in_byte_cnt == BYTE_LEN + 1) begin
 					// rxd should be high at this point
 					// but we can't do anything about it otherwise
 					out_120mhz <= curr_byte_shifted;
-					out_ready_120mhz <= 1;
+					outclk_120mhz <= 1;
 					bit_in_byte_cnt <= 0;
 				end else begin
 					bit_in_byte_cnt <= bit_in_byte_cnt + 1;
@@ -126,13 +125,13 @@ endmodule
 // expose a stream interface to request one byte at a time
 module uart_tx_fast_stream_driver(
 	input clk, clk_120mhz, reset, start,
-	input in_ready, input [7:0] in,
+	input inclk, input [7:0] in,
 	output txd, output ready);
 
 wire driv_ready;
 uart_tx_fast_driver uart_driv_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
-	.in_ready(in_ready), .in(in), .txd(txd), .ready(driv_ready));
+	.inclk(inclk), .in(in), .txd(txd), .ready(driv_ready));
 
 // Wait for data to arrive before checking ready
 reg waiting_for_data = 0;
@@ -141,7 +140,7 @@ assign ready = waiting_for_data ? 0 : driv_ready;
 always @(posedge clk) begin
 	if (reset || start)
 		waiting_for_data <= 0;
-	else if (in_ready)
+	else if (inclk)
 		waiting_for_data <= 0;
 	else if (ready)
 		waiting_for_data <= 1;
@@ -155,8 +154,7 @@ module uart_tx_fast_driver #(
 	// 120MBaud * 10 = 120MHz
 	parameter CYCLES_PER_BIT = 10) (
 	input clk, clk_120mhz, reset,
-	input in_ready,
-	input [7:0] in,
+	input inclk, input [7:0] in,
 	output txd,
 	// ready is asserted to request for a new byte to transmit
 	output ready);
@@ -175,26 +173,28 @@ assign txd = curr_byte_shifted[0];
 reg [clog2(BYTE_LEN+2)-1:0] bits_left_cnt = 0;
 
 wire [BYTE_LEN-1:0] in_120mhz;
-wire in_ready_120mhz;
+wire inclk_120mhz;
 
+wire reset_120mhz;
+reset_stream_fifo reset_fifo_inst(
+	.clka(clk), .clkb(clk_120mhz),
+	.reseta(reset), .resetb(reset_120mhz));
 wire fifo_empty, fifo_full, fifo_rden;
 assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
 byte_stream_fifo data_fifo(
 	.rst(reset),
 	.wr_clk(clk), .rd_clk(clk_120mhz),
-	.din(in), .wr_en(in_ready),
+	.din(in), .wr_en(inclk),
 	.rd_en(fifo_rden), .dout(in_120mhz),
 	.full(fifo_full), .empty(fifo_empty));
 delay fifo_read_delay(
-	.clk(clk_120mhz), .in(fifo_rden), .out(in_ready_120mhz));
-wire reset_120mhz;
-reset_stream_fifo reset_fifo_inst(
-	.clka(clk), .clkb(clk_120mhz),
-	.reseta(reset), .resetb(reset_120mhz));
+	.clk(clk_120mhz), .reset(reset_120mhz),
+	.in(fifo_rden), .out(inclk_120mhz));
 // delay tx_clk by one cycle to account for fifo read time
 wire tx_clk_delayed;
 delay tx_clk_delay(
-	.clk(clk_120mhz), .in(tx_clk), .out(tx_clk_delayed));
+	.clk(clk_120mhz), .reset(reset_120mhz),
+	.in(tx_clk), .out(tx_clk_delayed));
 
 assign ready = !fifo_full;
 
@@ -203,7 +203,7 @@ always @(posedge clk_120mhz) begin
 		bits_left_cnt <= 0;
 		curr_byte_shifted <= ~0;
 	end else if (tx_clk_delayed) begin
-		if (bits_left_cnt == 0 && in_ready_120mhz) begin
+		if (bits_left_cnt == 0 && inclk_120mhz) begin
 			bits_left_cnt <= BYTE_LEN + 2 - 1;
 			curr_byte_shifted <= {1'b1, in_120mhz, 1'b0};
 		end else begin

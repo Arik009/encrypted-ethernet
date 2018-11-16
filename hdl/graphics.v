@@ -12,9 +12,9 @@ module graphics_main #(
 `include "params.vh"
 
 delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) hsync_delay(
-	.clk(clk), .in(vga_hsync_in), .out(vga_hsync_out));
+	.clk(clk), .reset(reset), .in(vga_hsync_in), .out(vga_hsync_out));
 delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) vsync_delay(
-	.clk(clk), .in(vga_vsync_in), .out(vga_vsync_out));
+	.clk(clk), .reset(reset), .in(vga_vsync_in), .out(vga_vsync_out));
 
 wire [4:0] image_x, image_y;
 assign image_x = vga_x[8:4];

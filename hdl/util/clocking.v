@@ -12,7 +12,7 @@ bit_stream_fifo reset_fifo(
 	.empty(fifo_empty));
 assign fifo_rden = !fifo_empty;
 delay reset_fifo_read_delay(
-	.clk(clkb), .in(fifo_rden), .out(fifo_prev_rden));
+	.clk(clkb), .reset(resetb), .in(fifo_rden), .out(fifo_prev_rden));
 assign resetb = fifo_prev_rden && fifo_out;
 
 endmodule

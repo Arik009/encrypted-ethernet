@@ -12,7 +12,7 @@ module video_cache_ram_driver #(
 `include "params.vh"
 
 delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
-	.clk(clk), .in(read_req), .out(read_ready));
+	.clk(clk), .reset(reset), .in(read_req), .out(read_ready));
 video_cache_ram video_cache_ram_inst(
 	.clka(clk), .wea(write_enable),
 	.addra(write_addr), .dina(write_val),
@@ -31,7 +31,7 @@ module packet_synth_rom_driver #(
 `include "params.vh"
 
 delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
-	.clk(clk), .in(read_req), .out(read_ready));
+	.clk(clk), .reset(reset), .in(read_req), .out(read_ready));
 packet_synth_rom packet_synth_rom_inst(
 	.clka(clk),
 	.addra(read_addr), .douta(read_out));
@@ -52,7 +52,7 @@ module packet_buffer_ram_driver #(
 `include "params.vh"
 
 delay #(.DELAY_LEN(READ_LATENCY)) delay_inst(
-	.clk(clk), .in(read_req), .out(read_ready));
+	.clk(clk), .reset(reset), .in(read_req), .out(read_ready));
 packet_buffer_ram packet_buffer_ram_inst(
 	.clka(clk), .wea(write_enable),
 	.addra(write_addr), .dina(write_val),
