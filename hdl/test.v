@@ -294,20 +294,14 @@ reg reset = 1;
 
 localparam RAM_SIZE = PACKET_BUFFER_SIZE;
 
-wire ram_read_req;
-wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
-wire ram_write_enable;
-wire [clog2(RAM_SIZE)-1:0] ram_write_addr;
-wire [BYTE_LEN-1:0] ram_write_val;
-wire ram_read_ready;
-wire [BYTE_LEN-1:0] ram_read_out;
+wire ram_readclk, ram_we, ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] ram_raddr, ram_waddr;
+wire [BYTE_LEN-1:0] ram_win, ram_out;
 packet_buffer_ram_driver ram_driv_inst(
-	.clk(clk), .reset(reset),
-	.read_req(ram_read_req), .read_addr(ram_read_addr),
-	.write_enable(ram_write_enable),
-	.write_addr(ram_write_addr),
-	.write_val(ram_write_val),
-	.read_ready(ram_read_ready), .read_out(ram_read_out));
+	.clk(clk), .rst(reset),
+	.readclk(ram_readclk), .raddr(ram_raddr),
+	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
+	.outclk(ram_outclk), .out(ram_out));
 
 wire uart_rxd;
 wire [7:0] uart_out;
@@ -316,11 +310,11 @@ uart_rx_fast_driver uart_rx_inst (
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
 	.rxd(uart_rxd), .out(uart_out), .outclk(uart_outclk));
 stream_to_memory uart_stm_inst(
-	.clk(clk), .reset(reset),
+	.clk(clk), .rst(reset),
 	.set_offset_req(1'b0), .set_offset_val(0),
 	.inclk(uart_outclk), .in(uart_out),
-	.write_req(ram_write_enable), .write_addr(ram_write_addr),
-	.write_val(ram_write_val));
+	.ram_we(ram_we), .ram_waddr(ram_waddr),
+	.ram_win(ram_win));
 
 reg sfm_start = 0;
 
@@ -332,11 +326,11 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.inclk(uart_inclk), .in(uart_in), .txd(uart_txd),
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
-	.clk(clk), .reset(reset), .start(sfm_start),
+	.clk(clk), .rst(reset), .start(sfm_start),
 	.read_start(0), .read_end(3),
-	.ready(uart_tx_ready),
-	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
-	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
+	.downstream_rdy(uart_tx_ready),
+	.ram_outclk(ram_outclk), .ram_out(ram_out),
+	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_inclk), .out(uart_in));
 
 reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
@@ -404,24 +398,22 @@ bytes_to_colors btc_inst(
 reg [4*COLOR_LEN-1:0] in_data_shifted = 48'hDEADBEEFCAFE;
 assign btc_in = in_data_shifted[0+:BYTE_LEN];
 
-wire vram_read_req, vram_read_ready, vram_write_enable;
-wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_read_addr, vram_write_addr;
+wire vram_readclk, vram_outclk, vram_we;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
 wire [COLOR_LEN-1:0] vram_read_out, vram_write_val;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .reset(reset),
-	.read_req(vram_read_req), .read_addr(vram_read_addr),
-	.write_enable(vram_write_enable),
-	.write_addr(vram_write_addr),
-	.write_val(vram_write_val),
-	.read_ready(vram_read_ready), .read_out(vram_read_out));
+	.clk(clk), .rst(reset),
+	.readclk(vram_readclk), .raddr(vram_raddr),
+	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
+	.outclk(vram_outclk), .read_out(vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
-	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
+	.clk(clk), .rst(reset), .set_offset_req(0), .set_offset_val(0),
 	.inclk(btc_outclk), .in(btc_out),
-	.write_req(vram_write_enable), .write_addr(vram_write_addr),
-	.write_val(vram_write_val));
-assign vram_read_req = 0;
-assign vram_read_addr = 0;
+	.ram_we(vram_we), .ram_waddr(vram_waddr),
+	.ram_win(vram_win));
+assign vram_readclk = 0;
+assign vram_raddr = 0;
 
 always @(posedge clk) begin
 	if (btc_inclk)

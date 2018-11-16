@@ -25,9 +25,9 @@ clock_divider #(.PULSE_PERIOD(4)) clk_div4_inst(
 wire ram_read_ready;
 wire [BYTE_LEN-1:0] ram_read_out;
 packet_synth_rom_driver packet_synth_rom_driver_inst(
-	.clk(clk), .reset(reset),
-	.read_req(clk_div4), .read_addr(ram_addr),
-	.read_ready(ram_read_ready), .read_out(ram_read_out));
+	.clk(clk), .rst(reset),
+	.readclk(clk_div4), .raddr(ram_addr),
+	.outclk(ram_read_ready), .out(ram_read_out));
 wire [1:0] btd_out;
 bytes_to_dibits btd_inst(
 	.clk(clk), .reset(reset), .inclk(ram_read_ready),
@@ -183,40 +183,36 @@ pulse_generator pg_btnc(
 pulse_generator pg_btnl(
 	.clk(clk), .reset(reset), .in(btnl_raw), .out(btnl));
 
-wire ram_read_req, ram_read_ready, ram_write_enable;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] ram_read_addr, ram_write_addr;
-wire [BYTE_LEN-1:0] ram_read_out, ram_write_val;
+wire ram_readclk, ram_outclk, ram_we;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] ram_raddr, ram_waddr;
+wire [BYTE_LEN-1:0] ram_out, ram_win;
 packet_buffer_ram_driver ram_driv_inst(
-	.clk(clk), .reset(reset),
-	.read_req(ram_read_req), .read_addr(ram_read_addr),
-	.write_enable(ram_write_enable),
-	.write_addr(ram_write_addr),
-	.write_val(ram_write_val),
-	.read_ready(ram_read_ready), .read_out(ram_read_out));
+	.clk(clk), .rst(reset),
+	.readclk(ram_readclk), .raddr(ram_raddr),
+	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
+	.outclk(ram_outclk), .out(ram_out));
 
-wire vram_read_req, vram_read_ready, vram_write_enable;
-wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_read_addr, vram_write_addr;
-wire [COLOR_LEN-1:0] vram_read_out, vram_write_val;
+wire vram_readclk, vram_outclk, vram_we;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
+wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .reset(reset),
-	.read_req(vram_read_req), .read_addr(vram_read_addr),
-	.write_enable(vram_write_enable),
-	.write_addr(vram_write_addr),
-	.write_val(vram_write_val),
-	.read_ready(vram_read_ready), .read_out(vram_read_out));
+	.clk(clk), .rst(reset),
+	.readclk(vram_readclk), .raddr(vram_raddr),
+	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
+	.outclk(vram_outclk), .out(vram_out));
 
-wire uart_ram_write_enable;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] uart_ram_write_addr;
-wire [BYTE_LEN-1:0] uart_ram_write_val;
-wire eth_ram_write_enable;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] eth_ram_write_addr;
-wire [BYTE_LEN-1:0] eth_ram_write_val;
-assign ram_write_enable =
-	config_transmit ? uart_ram_write_enable : eth_ram_write_enable;
-assign ram_write_addr =
-	config_transmit ? uart_ram_write_addr : eth_ram_write_addr;
-assign ram_write_val =
-	config_transmit ? uart_ram_write_val : eth_ram_write_val;
+wire uart_ram_we;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] uart_ram_waddr;
+wire [BYTE_LEN-1:0] uart_ram_win;
+wire eth_ram_we;
+wire [clog2(PACKET_BUFFER_SIZE)-1:0] eth_ram_waddr;
+wire [BYTE_LEN-1:0] eth_ram_win;
+assign ram_we =
+	config_transmit ? uart_ram_we : eth_ram_we;
+assign ram_waddr =
+	config_transmit ? uart_ram_waddr : eth_ram_waddr;
+assign ram_win =
+	config_transmit ? uart_ram_win : eth_ram_win;
 
 wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
@@ -224,11 +220,11 @@ uart_rx_fast_driver uart_rx_inst (
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 stream_to_memory uart_stm_inst(
-	.clk(clk), .reset(reset),
+	.clk(clk), .rst(reset),
 	.set_offset_req(1'b0), .set_offset_val(0),
 	.inclk(uart_rx_outclk), .in(uart_rx_out),
-	.write_req(uart_ram_write_enable), .write_addr(uart_ram_write_addr),
-	.write_val(uart_ram_write_val));
+	.ram_we(uart_ram_we), .ram_waddr(uart_ram_waddr),
+	.ram_win(uart_ram_win));
 
 wire uart_tx_inclk, uart_tx_ready;
 wire [BYTE_LEN-1:0] uart_tx_in;
@@ -241,11 +237,11 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
-	.clk(clk), .reset(reset), .start(uart_sfm_start),
+	.clk(clk), .rst(reset), .start(uart_sfm_start),
 	.read_start(0), .read_end(PACKET_BUFFER_SIZE),
-	.ready(uart_tx_ready),
-	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
-	.ram_read_req(ram_read_req), .ram_read_addr(ram_read_addr),
+	.downstream_rdy(uart_tx_ready),
+	.ram_outclk(ram_outclk), .ram_out(ram_out),
+	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
 
 wire btc_vram_outclk;
@@ -255,17 +251,17 @@ bytes_to_colors btc_vram(
 	.outclk(btc_vram_outclk), .out(btc_vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
-	.clk(clk), .reset(reset), .set_offset_req(0), .set_offset_val(0),
+	.clk(clk), .rst(reset), .set_offset_req(0), .set_offset_val(0),
 	.inclk(btc_vram_outclk), .in(btc_vram_out),
-	.write_req(vram_write_enable), .write_addr(vram_write_addr),
-	.write_val(vram_write_val));
+	.ram_we(vram_we), .ram_waddr(vram_waddr),
+	.ram_win(vram_win));
 
 graphics_main graphics_main_inst(
 	.clk(clk), .reset(reset), .blank(blank),
 	.vga_x(vga_x), .vga_y(vga_y),
 	.vga_hsync_in(hsync_predelay), .vga_vsync_in(vsync_predelay),
-	.ram_read_ready(vram_read_ready), .ram_read_val(vram_read_out),
-	.ram_read_req(vram_read_req), .ram_read_addr(vram_read_addr),
+	.ram_read_ready(vram_outclk), .ram_read_val(vram_out),
+	.ram_read_req(vram_readclk), .ram_read_addr(vram_raddr),
 	.vga_col(vga_col),
 	.vga_hsync_out(hsync), .vga_vsync_out(vsync));
 
@@ -284,9 +280,9 @@ rmii_driver rmii_driv_inst(
 dibits_to_bytes eth_dtb(
 	.clk(clk), .reset(reset),
 	.inclk(eth_outclk), .in(eth_out), .done_in(eth_done),
-	.out(eth_ram_write_val), .outclk(eth_byte_outclk),
+	.out(eth_ram_win), .outclk(eth_byte_outclk),
 	.done_out(eth_dtb_done));
-assign eth_ram_write_enable = eth_byte_outclk;
+assign eth_ram_we = eth_byte_outclk;
 
 // maximum ethernet frame length is 1522 bytes
 localparam MAX_ETH_FRAME_LEN = 1522;
@@ -302,7 +298,7 @@ always @(posedge clk) begin
 	end else if (eth_byte_outclk && record)
 		eth_byte_cnt <= eth_byte_cnt + 1;
 end
-assign eth_ram_write_addr = eth_byte_cnt;
+assign eth_ram_waddr = eth_byte_cnt;
 
 wire eth_txen;
 wire [1:0] eth_txd;
@@ -332,7 +328,7 @@ assign LED = {
 };
 
 assign hex_display_data = {
-	4'h0, ram_write_addr, 4'h0, ram_read_addr
+	4'h0, ram_waddr, 4'h0, ram_raddr
 };
 
 assign JB = {
