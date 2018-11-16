@@ -43,7 +43,7 @@ module aes_encrypt_block(input [127:0] in,
     // we're currently not generating correct round keys, TODO
     
     subbytes a(.in(in), .out(sb_out));                   
-    shiftrows b(.in(s_out), .out(sr_out));
+    shiftrows b(.in(sb_out), .out(sr_out));
     mixcolumns c(.in(sr_out), .out(mc_out));
     addroundkey d(.in(mc_out), .out(out), .key(key));
 endmodule

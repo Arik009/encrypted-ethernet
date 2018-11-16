@@ -3,12 +3,6 @@ IP changes will have to be ported between vivado versions manually. This file se
 2018.2 => 2016.2
 ================
 
-- clk_wiz_0: add 120MHz output clock to clk_out3
-- clk_wiz_0: add 65MHz output clock to clk_out4
-- byte_stream_fifo: fifo, independent clocks distributed ram, 8x16
-- bit_stream_fifo: fifo, independent clocks distributed ram, 1x16
-- simple_video_cache_ram: simple dual port ram, 12x4096, both ports always enabled, initialize with debug.coe
-
 2016.2 => 2018.2
 ================
 

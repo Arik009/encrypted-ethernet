@@ -23,17 +23,17 @@ module debounce (
 	output reg clean);
 
 reg [19:0] count;
-reg new;
+reg prev;
 
 always @(posedge clk) begin
 	if (reset) begin
-		new <= noisy;
+		prev <= noisy;
 		clean <= noisy;
 		count <= 0;
-	end else if (noisy != new) begin
-		new <= noisy; count <= 0;
+	end else if (noisy != prev) begin
+		prev <= noisy; count <= 0;
 	end else if (count == 650000)
-		clean <= new;
+		clean <= prev;
 	else
 		count <= count+1;
 end

@@ -279,6 +279,38 @@ end
 
 endmodule
 
+
+
+module test_aes_one_block_encrypt();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk));
+
+reg [127:0] in;
+reg [127:0] key;
+wire [127:0] out;
+
+aes_encrypt_block aes(
+	.in(in), .key(key), .out(out));
+
+initial begin
+	#100
+	in = 200;
+    key = 0;
+	#1000
+
+	$stop();
+end
+
+endmodule
+
 module test_fast_uart();
 
 `include "params.vh"
