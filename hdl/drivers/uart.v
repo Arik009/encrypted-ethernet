@@ -128,23 +128,14 @@ module uart_tx_fast_stream_driver(
 	input inclk, input [7:0] in,
 	output txd, output ready);
 
-wire driv_ready;
+wire driv_rdy;
 uart_tx_fast_driver uart_driv_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
-	.inclk(inclk), .in(in), .txd(txd), .ready(driv_ready));
-
-// Wait for data to arrive before checking ready
-reg waiting_for_data = 0;
-assign ready = waiting_for_data ? 0 : driv_ready;
-
-always @(posedge clk) begin
-	if (reset || start)
-		waiting_for_data <= 0;
-	else if (inclk)
-		waiting_for_data <= 0;
-	else if (ready)
-		waiting_for_data <= 1;
-end
+	.inclk(inclk), .in(in), .txd(txd), .ready(driv_rdy));
+stream_coord sc_inst(
+	.clk(clk), .rst(reset || start),
+	.downstream_rdy(driv_rdy), .downstream_inclk(inclk),
+	.readclk(ready));
 
 endmodule
 

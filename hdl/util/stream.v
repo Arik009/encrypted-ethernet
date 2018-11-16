@@ -237,3 +237,24 @@ always @(posedge clk) begin
 end
 
 endmodule
+
+// coordinate two stream modules so that upstream data is requested
+// only after downstream has received the previous word
+module stream_coord(
+	input clk, rst,
+	input downstream_rdy, downstream_inclk,
+	output readclk);
+
+reg waiting = 0;
+assign readclk = waiting ? 0 : downstream_rdy;
+
+always @(posedge clk) begin
+	if (rst)
+		waiting <= 0;
+	else if (downstream_inclk)
+		waiting <= 0;
+	else if (readclk)
+		waiting <= 1;
+end
+
+endmodule
