@@ -1,44 +1,5 @@
 `timescale 1ns / 1ps
 
-module test_ram_to_uart();
-
-reg clk = 0;
-// 50MHz clock
-initial forever #10 clk = ~clk;
-
-reg reset = 1;
-reg start = 0;
-wire txd;
-
-`include "params.vh"
-
-localparam RAM_SIZE = PACKET_BUFFER_SIZE;
-
-wire ram_read_req, ram_read_ready;
-wire [BYTE_LEN-1:0] ram_read_out;
-wire [clog2(RAM_SIZE)-1:0] ram_read_addr;
-packet_buffer_ram_driver packet_buffer_ram_driver_inst(
-	.clk(clk), .reset(reset),
-	.read_req(ram_read_req), .read_addr(ram_read_addr),
-	.read_ready(ram_read_ready), .read_out(ram_read_out),
-	.write_enable(0));
-ram_to_uart ram_to_uart_inst(
-	.clk(clk), .reset(reset), .start(start),
-	.read_start(0), .read_end(RAM_SIZE),
-	.ram_read_ready(ram_read_ready), .ram_read_out(ram_read_out),
-	.uart_txd(txd), .ram_read_req(ram_read_req),
-	.ram_read_addr(ram_read_addr));
-
-initial begin
-	#100
-	reset = 0;
-	start = 1;
-	#1000000
-	$stop();
-end
-
-endmodule
-
 module test_ethernet_driver();
 
 `include "params.vh"
