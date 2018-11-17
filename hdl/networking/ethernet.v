@@ -253,13 +253,13 @@ localparam STATE_CRC = 4;
 localparam STATE_DONE = 5;
 
 reg [2:0] state = STATE_MAC_DST;
-reg [2:0] cnt;
+reg [2:0] cnt = 0;
 reg idle = 1;
 assign err = (!idle && !inclk) ||
 	(state == STATE_DONE && inclk && in != 2'b00);
 
 assign out = dtb_out;
-assign outclk = dtb_outclk;
+assign outclk = state == STATE_PAYLOAD && dtb_outclk;
 
 always @(posedge clk) begin
 	if (rst || !inclk) begin

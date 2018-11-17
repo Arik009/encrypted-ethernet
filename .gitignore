@@ -17,6 +17,9 @@
 !/nexys4-viv2016.2-proj/nexys4-proj.srcs/sources_1/ip/*/*.prj
 *.wcfg
 
+# Python
+__pycache__
+
 # Generated files
 /coe/*.coe
 /laptop-src/dump.log

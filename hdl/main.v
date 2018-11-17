@@ -170,7 +170,7 @@ uart_rx_fast_driver uart_rx_inst (
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 stream_to_memory uart_stm_inst(
 	.clk(clk), .rst(rst),
-	.set_offset_req(1'b0), .set_offset_val(0),
+	.setoff_req(1'b0), .setoff_val(0),
 	.inclk(uart_rx_outclk), .in(uart_rx_out),
 	.ram_we(uart_ram_we), .ram_waddr(uart_ram_waddr),
 	.ram_win(uart_ram_win));
@@ -200,7 +200,7 @@ bytes_to_colors btc_vram(
 	.outclk(btc_vram_outclk), .out(btc_vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
-	.clk(clk), .rst(rst), .set_offset_req(0), .set_offset_val(0),
+	.clk(clk), .rst(rst), .setoff_req(0), .setoff_val(0),
 	.inclk(btc_vram_outclk), .in(btc_vram_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));

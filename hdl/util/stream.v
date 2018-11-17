@@ -98,10 +98,10 @@ reg [1:0] state = 0;
 reg [BYTE_LEN-1:0] prev_in;
 
 always @(posedge clk) begin
-	prev_in <= in;
 	if (rst)
 		state <= 0;
 	else if (inclk) begin
+		prev_in <= in;
 		case (state)
 		1: begin
 			outclk <= 1;
@@ -197,8 +197,8 @@ module stream_to_memory #(
 	parameter WORD_LEN = BYTE_LEN) (
 	input clk, rst,
 	// used to set the offset for a new write stream
-	input set_offset_req,
-	input [clog2(RAM_SIZE)-1:0] set_offset_val,
+	input setoff_req,
+	input [clog2(RAM_SIZE)-1:0] setoff_val,
 	input inclk, input [WORD_LEN-1:0] in,
 	output reg ram_we = 0,
 	output reg [clog2(RAM_SIZE)-1:0] ram_waddr,
@@ -212,8 +212,8 @@ always @(posedge clk) begin
 		ram_we <= 0;
 		curr_addr <= 0;
 	end else begin
-		if (set_offset_req)
-			curr_addr <= set_offset_val;
+		if (setoff_req)
+			curr_addr <= setoff_val;
 		else if (inclk)
 			curr_addr <= curr_addr + 1;
 

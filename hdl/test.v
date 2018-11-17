@@ -335,7 +335,7 @@ uart_rx_fast_driver uart_rx_inst (
 	.rxd(uart_rxd), .out(uart_out), .outclk(uart_outclk));
 stream_to_memory uart_stm_inst(
 	.clk(clk), .rst(rst),
-	.set_offset_req(1'b0), .set_offset_val(0),
+	.setoff_re(1'b0), .setoff_val(0),
 	.inclk(uart_outclk), .in(uart_out),
 	.ram_we(ram_we), .ram_waddr(ram_waddr),
 	.ram_win(ram_win));
@@ -412,7 +412,7 @@ video_cache_ram_driver vram_driv_inst(
 	.outclk(vram_outclk), .out(vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
-	.clk(clk), .rst(rst), .set_offset_req(0), .set_offset_val(0),
+	.clk(clk), .rst(rst), .setoff_req(0), .setoff_val(0),
 	.inclk(btc_outclk), .in(btc_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
@@ -455,8 +455,18 @@ wire [BYTE_LEN-1:0] rom_out;
 wire sfm_readclk;
 wire btd_inclk, btd_in_done;
 wire [BYTE_LEN-1:0] btd_in;
-wire eth_parse_inclk, eth_parse_in_done;
+wire eth_parse_inclk, eth_parse_in_done, eth_parse_outclk, eth_parse_err;
 wire [1:0] eth_parse_in;
+wire [BYTE_LEN-1:0] eth_parse_out;
+wire fgp_parse_done;
+wire btc_inclk, btc_outclk;
+wire [BYTE_LEN-1:0] btc_in;
+wire [COLOR_LEN-1:0] btc_out;
+wire stm_setoff_req;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] stm_setoff_val;
+wire vram_readclk, vram_outclk, vram_we;
+wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
+wire [COLOR_LEN-1:0] vram_out, vram_win;
 packet_synth_rom_driver psr_inst(
 	.clk(clk), .rst(rst),
 	.readclk(rom_readclk), .raddr(rom_raddr),
@@ -480,7 +490,31 @@ bytes_to_dibits_coord_buf btd_inst(
 eth_parser eth_parser_inst(
 	.clk(clk), .rst(rst),
 	.inclk(eth_parse_inclk), .in(eth_parse_in),
-	.in_done(eth_parse_in_done));
+	.in_done(eth_parse_in_done),
+	.downstream_done(fgp_parse_done),
+	.outclk(eth_parse_outclk), .out(eth_parse_out),
+	.err(eth_parse_err));
+fgp_parser fgp_parser_inst(
+	.clk(clk), .rst(rst || eth_parse_err),
+	.inclk(eth_parse_outclk), .in(eth_parse_out),
+	.done(fgp_parse_done),
+	.setoff_req(stm_setoff_req), .setoff_val(stm_setoff_val),
+	.outclk(btc_inclk), .out(btc_in));
+bytes_to_colors btc_inst(
+	.clk(clk), .rst(rst), .inclk(btc_inclk), .in(btc_in),
+	.outclk(btc_outclk), .out(btc_out));
+stream_to_memory
+	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
+	.clk(clk), .rst(rst),
+	.setoff_req(stm_setoff_req), .setoff_val(stm_setoff_val),
+	.inclk(btc_outclk), .in(btc_out),
+	.ram_we(vram_we), .ram_waddr(vram_waddr),
+	.ram_win(vram_win));
+video_cache_ram_driver vram_driv_inst(
+	.clk(clk), .rst(rst),
+	.readclk(vram_readclk), .raddr(vram_raddr),
+	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
+	.outclk(vram_outclk), .out(vram_out));
 
 initial begin
 	#100

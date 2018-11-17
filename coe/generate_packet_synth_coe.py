@@ -1,20 +1,16 @@
+import sys
+sys.path.append('../lib/')
 import os
+import eth
+import image_bytes
 
-# sample taken from StackOverflow:
-# https://stackoverflow.com/questions/40017293/check-fcs-ethernet-frame-crc-32-online-tools
-
-mac_send = bytes.fromhex('DEADBEEFCAFE')
-mac_recv = bytes.fromhex('C0FFEEDAD101')
-
-sample_payload_str = '080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
-sample_payload = bytes.fromhex(sample_payload_str)
-
-sample_frame_str = 'FFFFFFFFFFFF001234567890080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
-# add preamble manually for testing
-# sample_frame_str = '555555555555D5' + sample_frame_str
-# add crc manually for testing
-sample_frame_str += 'F9065ED2'
-sample_frame = bytes.fromhex(sample_frame_str)
+fin_name = '../laptop-src/images/nyan.jpg'
+IMAGE_WIDTH = 32
+IMAGE_HEIGHT = 32
+sample_payload = eth.gen_eth_fgp_payload(512,
+	image_bytes.image_to_colors(
+		fin_name, IMAGE_WIDTH, IMAGE_HEIGHT)[:512])
+sample_frame = eth.gen_eth_f2f(eth.ETHERTYPE_FGP, sample_payload)
 
 class Memory:
 	def __init__(self):
@@ -28,8 +24,8 @@ class Memory:
 		return off
 
 mem = Memory()
-mac_send_off = mem.append(mac_send)
-mac_recv_off = mem.append(mac_recv)
+mac_send_off = mem.append(eth.MAC_SEND)
+mac_recv_off = mem.append(eth.MAC_RECV)
 sample_frame_off = mem.append(sample_frame)
 sample_payload_off = mem.append(sample_payload)
 
