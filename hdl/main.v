@@ -35,7 +35,15 @@ module main(
 	output [0:0] ddr2_odt
 	);
 
+////// INCLUDES
+
 `include "params.vh"
+`include "networking.vh"
+
+localparam RAM_SIZE = PACKET_BUFFER_SIZE;
+localparam VRAM_SIZE = VIDEO_CACHE_RAM_SIZE;
+
+////// CLOCKING
 
 wire clk_50mhz;
 
@@ -51,6 +59,8 @@ clk_wiz_0 clk_wiz_inst(
 	.clk_in1(CLK100MHZ),
 	.clk_out1(clk_50mhz),
 	.clk_out3(clk_120mhz));
+
+////// RESET
 
 wire sw0, sw1;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
@@ -75,6 +85,8 @@ wire rst;
 pulse_extender reset_pe(
 	.clk(clk), .rst(0), .in(sw0 || config_change_reset), .out(rst));
 
+////// HEX DISPLAY
+
 wire [31:0] hex_display_data;
 wire [6:0] segments;
 
@@ -84,12 +96,29 @@ display_8hex display(
 assign SEG[7] = 1'b1;
 assign SEG[6:0] = segments;
 
+////// LEDS
+
 assign LED16_R = BTNL; // left button -> red led
 assign LED16_G = BTNC; // center button -> green led
 assign LED16_B = BTNR; // right button -> blue led
 assign LED17_R = BTNL;
 assign LED17_G = BTNC;
 assign LED17_B = BTNR;
+
+////// BUTTONS
+
+wire btnc_raw, btnl_raw, btnc, btnl;
+sync_debounce sd_btnc(
+	.rst(rst), .clk(clk), .in(BTNC), .out(btnc_raw));
+sync_debounce sd_btnl(
+	.rst(rst), .clk(clk), .in(BTNL), .out(btnl_raw));
+
+pulse_generator pg_btnc(
+	.clk(clk), .rst(rst), .in(btnc_raw), .out(btnc));
+pulse_generator pg_btnl(
+	.clk(clk), .rst(rst), .in(btnl_raw), .out(btnl));
+
+////// VGA
 
 wire [clog2(VGA_WIDTH)-1:0] vga_x;
 wire [clog2(VGA_HEIGHT)-1:0] vga_y;
@@ -119,21 +148,10 @@ delay vga_hs_sync(
 delay vga_vs_sync(
 	.clk(clk), .rst(rst), .in(vga_vsync), .out(VGA_VS));
 
-assign UART_CTS = 1;
-
-wire btnc_raw, btnl_raw, btnc, btnl;
-sync_debounce sd_btnc(
-	.rst(rst), .clk(clk), .in(BTNC), .out(btnc_raw));
-sync_debounce sd_btnl(
-	.rst(rst), .clk(clk), .in(BTNL), .out(btnl_raw));
-
-pulse_generator pg_btnc(
-	.clk(clk), .rst(rst), .in(btnc_raw), .out(btnc));
-pulse_generator pg_btnl(
-	.clk(clk), .rst(rst), .in(btnl_raw), .out(btnl));
+////// BRAM
 
 wire ram_readclk, ram_outclk, ram_we;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] ram_raddr, ram_waddr;
+wire [clog2(RAM_SIZE)-1:0] ram_raddr, ram_waddr;
 wire [BYTE_LEN-1:0] ram_out, ram_win;
 packet_buffer_ram_driver ram_driv_inst(
 	.clk(clk), .rst(rst),
@@ -150,11 +168,13 @@ video_cache_ram_driver vram_driv_inst(
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
 	.outclk(vram_outclk), .out(vram_out));
 
+////// RAM MULTIPLEXING
+
 wire uart_ram_we;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] uart_ram_waddr;
+wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr;
 wire [BYTE_LEN-1:0] uart_ram_win;
 wire eth_ram_we;
-wire [clog2(PACKET_BUFFER_SIZE)-1:0] eth_ram_waddr;
+wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr;
 wire [BYTE_LEN-1:0] eth_ram_win;
 assign ram_we =
 	config_transmit ? uart_ram_we : eth_ram_we;
@@ -163,6 +183,37 @@ assign ram_waddr =
 assign ram_win =
 	config_transmit ? uart_ram_win : eth_ram_win;
 
+////// RMII
+
+assign ETH_REFCLK = clk;
+assign ETH_MDC = 0;
+assign ETH_MDIO = 0;
+wire rmii_outclk, rmii_done;
+wire [1:0] rmii_out;
+rmii_driver rmii_driv_inst(
+	.clk(clk), .rst(rst),
+	.crsdv_in(ETH_CRSDV), .rxd_in(ETH_RXD),
+	.rxerr(ETH_RXERR),
+	.intn(ETH_INTN), .rstn(ETH_RSTN),
+	.out(rmii_out),
+	.outclk(rmii_outclk), .done(rmii_done));
+
+wire eth_txen;
+wire [1:0] eth_txd;
+// to be connected to eth_frame_generator
+assign eth_txen = 0;
+assign eth_txd = 2'b0;
+
+// buffer the outputs so that eth_txd calculation would be
+// under timing constraints
+delay eth_txen_delay(
+	.clk(clk), .rst(rst), .in(eth_txen), .out(ETH_TXEN));
+delay #(.DATA_WIDTH(2)) eth_txd_delay(
+	.clk(clk), .rst(rst), .in(eth_txd), .out(ETH_TXD));
+
+////// UART RX => RAM
+
+assign UART_CTS = 1;
 wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst (
@@ -175,35 +226,59 @@ stream_to_memory uart_stm_inst(
 	.ram_we(uart_ram_we), .ram_waddr(uart_ram_waddr),
 	.ram_win(uart_ram_win));
 
+////// UART TX <= RAM
+
 wire uart_tx_inclk, uart_tx_ready;
 wire [BYTE_LEN-1:0] uart_tx_in;
 wire uart_txd;
-wire uart_sfm_start;
-assign uart_sfm_start = btnc;
-uart_tx_fast_stream_driver uart_tx_inst(
-	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
-	.start(uart_sfm_start),
-	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
-	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .rst(rst), .start(uart_sfm_start),
-	.read_start(0), .read_end(PACKET_BUFFER_SIZE),
+	.read_start(0), .read_end(RAM_SIZE),
 	.readclk(uart_tx_ready),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
+uart_tx_fast_stream_driver uart_tx_inst(
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
+	.start(btnc),
+	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
+	.ready(uart_tx_ready));
 
-wire btc_vram_outclk;
-wire [COLOR_LEN-1:0] btc_vram_out;
-bytes_to_colors btc_vram(
-	.clk(clk), .rst(rst), .inclk(uart_rx_outclk), .in(uart_rx_out),
-	.outclk(btc_vram_outclk), .out(btc_vram_out));
+////// ETHERNET RX => VRAM
+
+wire eth_parse_downstream_done, eth_parse_outclk, eth_parse_err;
+wire [BYTE_LEN-1:0] eth_parse_out;
+eth_parser eth_parser_inst(
+	.clk(clk), .rst(rst),
+	.inclk(rmii_outclk), .in(rmii_out),
+	.in_done(rmii_done),
+	.downstream_done(eth_parse_downstream_done),
+	.outclk(eth_parse_outclk), .out(eth_parse_out),
+	.err(eth_parse_err));
+wire fgp_parse_setoff_req, fgp_parse_outclk;
+wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_parse_setoff_val;
+wire [BYTE_LEN-1:0] fgp_parse_out;
+fgp_parser fgp_parser_inst(
+	.clk(clk), .rst(rst || eth_parse_err),
+	.inclk(eth_parse_outclk), .in(eth_parse_out),
+	.done(eth_parse_downstream_done),
+	.setoff_req(fgp_parse_setoff_req), .setoff_val(fgp_parse_setoff_val),
+	.outclk(fgp_parse_outclk), .out(fgp_parse_out));
+wire fgp_btc_outclk;
+wire [COLOR_LEN-1:0] fgp_btc_out;
+bytes_to_colors fgp_btc_inst(
+	.clk(clk), .rst(rst), .inclk(fgp_parse_outclk), .in(fgp_parse_out),
+	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
-	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
-	.clk(clk), .rst(rst), .setoff_req(0), .setoff_val(0),
-	.inclk(btc_vram_outclk), .in(btc_vram_out),
+	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
+	.clk(clk), .rst(rst),
+	.setoff_req(fgp_parse_setoff_req),
+	.setoff_val(fgp_parse_setoff_val[clog2(VRAM_SIZE)-1:0]),
+	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
+
+////// VRAM => VGA
 
 graphics_main graphics_main_inst(
 	.clk(clk), .rst(rst), .blank(blank),
@@ -214,54 +289,23 @@ graphics_main graphics_main_inst(
 	.vga_col(vga_col),
 	.vga_hsync_out(vga_hsync), .vga_vsync_out(vga_vsync));
 
-assign ETH_REFCLK = clk;
-assign ETH_MDC = 0;
-assign ETH_MDIO = 0;
-wire eth_outclk, eth_done, eth_byte_outclk, eth_dtb_done;
-wire [1:0] eth_out;
-rmii_driver rmii_driv_inst(
-	.clk(clk), .rst(rst),
-	.crsdv_in(ETH_CRSDV), .rxd_in(ETH_RXD),
-	.rxerr(ETH_RXERR),
-	.intn(ETH_INTN), .rstn(ETH_RSTN),
-	.out(eth_out),
-	.outclk(eth_outclk), .done(eth_done));
+////// ETHERNET RX => RAM
+
+wire eth_dtb_outclk, eth_dtb_done;
+wire [BYTE_LEN-1:0] eth_dtb_out;
 dibits_to_bytes eth_dtb(
 	.clk(clk), .rst(rst),
-	.inclk(eth_outclk), .in(eth_out), .in_done(eth_done),
-	.out(eth_ram_win), .outclk(eth_byte_outclk),
+	.inclk(rmii_outclk), .in(rmii_out), .in_done(rmii_done),
+	.outclk(eth_dtb_outclk), .out(eth_dtb_out),
 	.done(eth_dtb_done));
-assign eth_ram_we = eth_byte_outclk;
+stream_to_memory eth_stm_inst(
+	.clk(clk), .rst(rst),
+	.setoff_req(eth_dtb_done), .setoff_val(0),
+	.inclk(eth_dtb_outclk), .in(eth_dtb_out),
+	.ram_we(eth_ram_we), .ram_waddr(eth_ram_waddr),
+	.ram_win(eth_ram_win));
 
-// maximum ethernet frame length is 1522 bytes
-localparam MAX_ETH_FRAME_LEN = 1522;
-reg [clog2(MAX_ETH_FRAME_LEN)-1:0] eth_byte_cnt = 0;
-reg record = 1;
-always @(posedge clk) begin
-	if (rst) begin
-		eth_byte_cnt <= 0;
-		record <= 1;
-	end else if (eth_done) begin
-		eth_byte_cnt <= 0;
-		record <= 0;
-	end else if (eth_byte_outclk && record)
-		eth_byte_cnt <= eth_byte_cnt + 1;
-end
-assign eth_ram_waddr = eth_byte_cnt;
-
-wire eth_txen;
-wire [1:0] eth_txd;
-// to be connected to eth_frame_generator
-assign eth_txen = 0;
-
-// buffer the outputs so that eth_txd calculation would be
-// under timing constraints
-delay eth_txen_delay(
-	.clk(clk), .rst(rst), .in(eth_txen), .out(ETH_TXEN));
-delay #(.DATA_WIDTH(2)) eth_txd_delay(
-	.clk(clk), .rst(rst), .in(eth_txd), .out(ETH_TXD));
-
-// DEBUGGING SIGNALS
+////// DEBUGGING SIGNALS
 
 wire blink;
 blinker blinker_inst(

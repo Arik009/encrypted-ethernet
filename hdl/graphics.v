@@ -19,7 +19,7 @@ delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) vsync_delay(
 wire [4:0] image_x, image_y;
 assign image_x = vga_x[8:4];
 assign image_y = vga_y[8:4];
-assign ram_read_req = !blank;
+assign ram_read_req = !blank && vga_x[9] && vga_y[9];
 assign ram_read_addr = {image_y, image_x};
 assign vga_col = ram_read_ready ? ram_read_val : 0;
 

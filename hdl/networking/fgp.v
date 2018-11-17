@@ -18,8 +18,6 @@ module fgp_parser(
 `include "params.vh"
 `include "networking.vh"
 
-localparam FGP_DATA_LEN_COLORS = FGP_DATA_LEN * BYTE_LEN / COLOR_LEN;
-
 localparam STATE_OFFSET = 0;
 localparam STATE_PADDING = 1;
 localparam STATE_DATA = 2;
