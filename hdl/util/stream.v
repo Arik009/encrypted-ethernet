@@ -66,9 +66,9 @@ always @(posedge clk) begin
 		outclk <= 0;
 		in_done_found <= 0;
 	end else begin
-		if (in_done)
+		if (inclk && in_done)
 			in_done_found <= 1;
-		else if (in_done_found && !idle)
+		else if (done)
 			in_done_found <= 0;
 
 		if (inclk) begin
@@ -126,6 +126,7 @@ end
 endmodule
 
 // stream data out of memory, rate-limited by ready
+// starts only after start is deasserted
 module stream_from_memory #(
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE,
 	parameter RAM_READ_LATENCY = PACKET_BUFFER_READ_LATENCY) (
@@ -134,8 +135,8 @@ module stream_from_memory #(
 	input [clog2(RAM_SIZE)-1:0] read_start, read_end,
 	input readclk,
 	input ram_outclk, input [BYTE_LEN-1:0] ram_out,
-	output reg ram_readclk = 0,
-	output reg [clog2(RAM_SIZE)-1:0] ram_raddr,
+	output ram_readclk,
+	output [clog2(RAM_SIZE)-1:0] ram_raddr,
 	output outclk, output [BYTE_LEN-1:0] out, output done);
 
 `include "params.vh"
@@ -145,46 +146,37 @@ assign out = ram_out;
 
 // save read_end so that it can be changed after start
 reg [clog2(RAM_SIZE)-1:0] read_end_buf;
+reg [clog2(RAM_SIZE)-1:0] curr_addr;
 
-// disambiguate reading first and last word
+// disambiguate reading first and last word in case read_start == read_end
 reg first_word = 0;
 
+assign ram_raddr = curr_addr;
 wire idle;
 assign idle = !first_word && ram_raddr == read_end_buf;
 
-wire prev_readclk;
-delay readclk_delay(
-	.clk(clk), .rst(rst), .in(readclk), .out(prev_readclk));
+assign ram_readclk = !idle && readclk;
 
-// delay done so it appears when data comes out of ram
+// delay done so it appears when the last word comes out of ram
 wire done_pd;
-assign done_pd = outclk && (ram_raddr + 1 == read_end_buf);
+assign done_pd = readclk && (ram_raddr + 1 == read_end_buf);
 delay #(.DELAY_LEN(RAM_READ_LATENCY)) done_delay(
 	.clk(clk), .rst(rst), .in(done_pd), .out(done));
 
 always @(posedge clk) begin
 	if (rst) begin
-		ram_readclk <= 0;
 		// stop stream even if readclk is asserted
 		// (i.e. make idle = 1)
-		ram_raddr <= 0;
+		curr_addr <= 0;
 		read_end_buf <= 0;
 		first_word <= 0;
-	end else begin
-		if (start) begin
-			ram_raddr <= read_start;
-			read_end_buf <= read_end;
-			first_word <= 1;
-		end else if (!idle && prev_readclk) begin
-			// only advance read address on next clock cycle
-			// so that ram reads from current address
-			ram_raddr <= ram_raddr + 1;
-			first_word <= 0;
-		end
-		if ((start || !idle) && readclk)
-			ram_readclk <= 1;
-		else
-			ram_readclk <= 0;
+	end else if (start) begin
+		curr_addr <= read_start;
+		read_end_buf <= read_end;
+		first_word <= 1;
+	end else if (ram_readclk) begin
+		curr_addr <= curr_addr + 1;
+		first_word <= 0;
 	end
 end
 

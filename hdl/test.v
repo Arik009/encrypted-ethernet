@@ -216,9 +216,9 @@ clk_wiz_0 clk_wiz_inst(
 
 localparam RAM_SIZE = PACKET_SYNTH_ROM_SIZE;
 reg rst = 1, start = 0;
-wire efg_inclk, efg_outclk, efg_done;
-wire [BYTE_LEN-1:0] efg_in;
-wire [1:0] efg_out;
+wire eth_synth_inclk, eth_synth_outclk, eth_synth_done;
+wire [BYTE_LEN-1:0] eth_synth_in;
+wire [1:0] eth_synth_out;
 wire rom1_readclk, rom2_readclk, rom1_outclk, rom2_outclk;
 wire [clog2(RAM_SIZE)-1:0] rom1_raddr, rom2_raddr;
 wire [BYTE_LEN-1:0] rom1_out, rom2_out;
@@ -230,24 +230,32 @@ packet_synth_rom_driver psr_driv_2(
 	.clk(clk), .rst(rst),
 	.readclk(rom2_readclk), .raddr(rom2_raddr),
 	.outclk(rom2_outclk), .out(rom2_out));
-wire sfm_readclk, sfm_done;
-stream_from_memory #(
-	.RAM_SIZE(RAM_SIZE), .RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY))
-	sfm_inst(
+wire sfm_readclk, sfm_done, sfm_outclk;
+wire [BYTE_LEN-1:0] sfm_out;
+stream_from_memory #(.RAM_SIZE(RAM_SIZE),
+	.RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY)) sfm_inst(
 	.clk(clk), .rst(rst), .start(start),
-	.read_start(SAMPLE_PAYLOAD_OFF),
-	.read_end(SAMPLE_PAYLOAD_OFF + SAMPLE_PAYLOAD_LEN),
+	.read_start(SAMPLE_IMG_DATA_OFF),
+	.read_end(SAMPLE_IMG_DATA_OFF + SAMPLE_IMG_DATA_LEN),
 	.readclk(sfm_readclk),
 	.ram_outclk(rom1_outclk), .ram_out(rom1_out),
 	.ram_readclk(rom1_readclk), .ram_raddr(rom1_raddr),
-	.outclk(efg_inclk), .out(efg_in), .done(sfm_done));
-eth_generator efg_inst(
+	.outclk(sfm_outclk), .out(sfm_out), .done(sfm_done));
+wire fgp_readclk, fgp_done;
+fgp_synth fgp_synth_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(sfm_done),
-	.inclk(efg_inclk), .in(efg_in),
+	.inclk(sfm_outclk), .in(sfm_out),
+	// set an arbitrary offset for testing
+	.offset(8'hc), .readclk(fgp_readclk),
+	.outclk(eth_synth_inclk), .out(eth_synth_in),
+	.upstream_readclk(sfm_readclk), .done(fgp_done));
+eth_synth eth_synth_inst(
+	.clk(clk), .rst(rst), .start(start), .in_done(fgp_done),
+	.inclk(eth_synth_inclk), .in(eth_synth_in),
 	.ram_outclk(rom2_outclk), .ram_out(rom2_out),
 	.ram_readclk(rom2_readclk), .ram_raddr(rom2_raddr),
-	.outclk(efg_outclk), .out(efg_out),
-	.upstream_readclk(sfm_readclk), .done(efg_done));
+	.outclk(eth_synth_outclk), .out(eth_synth_out),
+	.upstream_readclk(fgp_readclk), .done(eth_synth_done));
 
 initial begin
 	#500
@@ -257,7 +265,7 @@ initial begin
 	start = 0;
 
 	// bytes * dibits/byte * ns/dibit
-	#(88 * 4 * 20)
+	#(1512 * 4 * 20)
 
 	#400
 
@@ -335,7 +343,7 @@ uart_rx_fast_driver uart_rx_inst (
 	.rxd(uart_rxd), .out(uart_out), .outclk(uart_outclk));
 stream_to_memory uart_stm_inst(
 	.clk(clk), .rst(rst),
-	.setoff_re(1'b0), .setoff_val(0),
+	.setoff_req(1'b0), .setoff_val(0),
 	.inclk(uart_outclk), .in(uart_out),
 	.ram_we(ram_we), .ram_waddr(ram_waddr),
 	.ram_win(ram_win));
@@ -345,6 +353,7 @@ reg sfm_start = 0;
 wire uart_inclk;
 wire [BYTE_LEN-1:0] uart_in;
 wire uart_txd, uart_tx_ready;
+wire sfm_done;
 uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(sfm_start),
 	.inclk(uart_inclk), .in(uart_in), .txd(uart_txd),
@@ -352,10 +361,10 @@ uart_tx_fast_stream_driver uart_tx_inst(
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .rst(rst), .start(sfm_start),
 	.read_start(0), .read_end(3),
-	.downstream_rdy(uart_tx_ready),
+	.readclk(uart_tx_ready),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
-	.outclk(uart_inclk), .out(uart_in));
+	.outclk(uart_inclk), .out(uart_in), .done(sfm_done));
 
 reg [31:0] test_data = 32'b10_10011011_10_11010000_110_10001111_1;
 assign uart_rxd = test_data[31];
@@ -471,9 +480,8 @@ packet_synth_rom_driver psr_inst(
 	.clk(clk), .rst(rst),
 	.readclk(rom_readclk), .raddr(rom_raddr),
 	.outclk(rom_outclk), .out(rom_out));
-stream_from_memory #(
-	.RAM_SIZE(RAM_SIZE), .RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY))
-	sfm_inst(
+stream_from_memory #(.RAM_SIZE(RAM_SIZE),
+	.RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY)) sfm_inst(
 	.clk(clk), .rst(rst), .start(start),
 	.read_start(SAMPLE_FRAME_OFF),
 	.read_end(SAMPLE_FRAME_OFF + SAMPLE_FRAME_LEN),
@@ -482,7 +490,7 @@ stream_from_memory #(
 	.ram_readclk(rom_readclk), .ram_raddr(rom_raddr),
 	.outclk(btd_inclk), .out(btd_in), .done(btd_in_done));
 bytes_to_dibits_coord_buf btd_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(rst || start),
 	.inclk(btd_inclk), .in(btd_in), .in_done(btd_in_done),
 	.downstream_rdy(1), .readclk(sfm_readclk),
 	.outclk(eth_parse_inclk), .out(eth_parse_in),
@@ -494,18 +502,21 @@ eth_parser eth_parser_inst(
 	.downstream_done(fgp_parse_done),
 	.outclk(eth_parse_outclk), .out(eth_parse_out),
 	.err(eth_parse_err));
+wire eth_parse_downstream_rst;
+assign eth_parse_downstream_rst = rst || eth_parse_err;
 fgp_parser fgp_parser_inst(
-	.clk(clk), .rst(rst || eth_parse_err),
+	.clk(clk), .rst(eth_parse_downstream_rst),
 	.inclk(eth_parse_outclk), .in(eth_parse_out),
 	.done(fgp_parse_done),
 	.setoff_req(stm_setoff_req), .setoff_val(stm_setoff_val),
 	.outclk(btc_inclk), .out(btc_in));
 bytes_to_colors btc_inst(
-	.clk(clk), .rst(rst), .inclk(btc_inclk), .in(btc_in),
+	.clk(clk), .rst(eth_parse_downstream_rst),
+	.inclk(btc_inclk), .in(btc_in),
 	.outclk(btc_outclk), .out(btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(eth_parse_downstream_rst),
 	.setoff_req(stm_setoff_req), .setoff_val(stm_setoff_val),
 	.inclk(btc_outclk), .in(btc_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),

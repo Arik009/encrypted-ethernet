@@ -7,9 +7,9 @@ import image_bytes
 fin_name = '../laptop-src/images/nyan.jpg'
 IMAGE_WIDTH = 32
 IMAGE_HEIGHT = 32
-sample_payload = eth.gen_eth_fgp_payload(512,
-	image_bytes.image_to_colors(
-		fin_name, IMAGE_WIDTH, IMAGE_HEIGHT)[:512])
+sample_image_data = image_bytes.image_to_colors(
+		fin_name, IMAGE_WIDTH, IMAGE_HEIGHT)[:512]
+sample_payload = eth.gen_eth_fgp_payload(512, sample_image_data)
 sample_frame = eth.gen_eth_f2f(eth.ETHERTYPE_FGP, sample_payload)
 
 class Memory:
@@ -28,6 +28,7 @@ mac_send_off = mem.append(eth.MAC_SEND)
 mac_recv_off = mem.append(eth.MAC_RECV)
 sample_frame_off = mem.append(sample_frame)
 sample_payload_off = mem.append(sample_payload)
+sample_image_data_off = mem.append(sample_image_data)
 
 NUM_ELEMENTS = 4096;
 arr = list(range(NUM_ELEMENTS))
@@ -47,6 +48,8 @@ with open(rom_layout_filename, 'w') as f:
 	write_localparam(f, 'SAMPLE_PAYLOAD_LEN', len(sample_payload))
 	write_localparam(f, 'SAMPLE_FRAME_OFF', sample_frame_off)
 	write_localparam(f, 'SAMPLE_FRAME_LEN', len(sample_frame))
+	write_localparam(f, 'SAMPLE_IMG_DATA_OFF', sample_image_data_off)
+	write_localparam(f, 'SAMPLE_IMG_DATA_LEN', len(sample_image_data))
 
 for i in range(len(mem.curr_bytes)):
 	arr[i] = mem.curr_bytes[i]

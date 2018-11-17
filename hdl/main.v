@@ -258,8 +258,10 @@ eth_parser eth_parser_inst(
 wire fgp_parse_setoff_req, fgp_parse_outclk;
 wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_parse_setoff_val;
 wire [BYTE_LEN-1:0] fgp_parse_out;
+wire eth_parse_downstream_rst;
+assign eth_parse_downstream_rst = rst || eth_parse_err;
 fgp_parser fgp_parser_inst(
-	.clk(clk), .rst(rst || eth_parse_err),
+	.clk(clk), .rst(eth_parse_downstream_rst),
 	.inclk(eth_parse_outclk), .in(eth_parse_out),
 	.done(eth_parse_downstream_done),
 	.setoff_req(fgp_parse_setoff_req), .setoff_val(fgp_parse_setoff_val),
@@ -267,11 +269,12 @@ fgp_parser fgp_parser_inst(
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(rst), .inclk(fgp_parse_outclk), .in(fgp_parse_out),
+	.clk(clk), .rst(eth_parse_downstream_rst),
+	.inclk(fgp_parse_outclk), .in(fgp_parse_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(eth_parse_downstream_rst),
 	.setoff_req(fgp_parse_setoff_req),
 	.setoff_val(fgp_parse_setoff_val[clog2(VRAM_SIZE)-1:0]),
 	.inclk(fgp_btc_outclk), .in(fgp_btc_out),

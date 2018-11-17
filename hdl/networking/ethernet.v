@@ -1,15 +1,15 @@
 // generate an ethernet frame on the level of bytes
 // CRC needs to be generated on the level of dibits,
-// which is handled in eth_generator
+// which is handled in eth_synth
 // expects payload and rom delay of PACKET_SYNTH_ROM_DELAY
 // exposes readclk to out latency of PACKET_SYNTH_ROM_DELAY
-module eth_body_generator #(
+module eth_body_synth #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
-	input readclk, input ram_outclk, input [BYTE_LEN-1:0] ram_out,
-	output ram_readclk,
-	output reg [clog2(RAM_SIZE)-1:0] ram_raddr,
+	input readclk,
+	input ram_outclk, input [BYTE_LEN-1:0] ram_out,
+	output ram_readclk, output reg [clog2(RAM_SIZE)-1:0] ram_raddr,
 	output outclk, output [BYTE_LEN-1:0] out,
 	output upstream_readclk, done);
 
@@ -33,7 +33,10 @@ wire [BYTE_LEN-1:0] out_premux;
 // read result instead
 // if we requested a read from ram, then we want to use the ram read
 // result instead
-assign out = inclk ? in : (ram_outclk ? ram_out : out_premux);
+assign out =
+	inclk ? in :
+	ram_outclk ? ram_out :
+	out_premux;
 
 wire outclk_internal;
 assign outclk = outclk_internal || ram_outclk || inclk;
@@ -43,8 +46,7 @@ delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) outclk_delay(
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY),
 	.DATA_WIDTH(BYTE_LEN)) out_delay(
 	.clk(clk), .rst(rst || start), .in(out_pd), .out(out_premux));
-delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) done_delay(
-	.clk(clk), .rst(rst || start), .in(in_done), .out(done));
+assign done = in_done;
 
 reg [2:0] state = STATE_IDLE;
 reg [2:0] cnt;
@@ -140,7 +142,7 @@ end
 endmodule
 
 // creates continuous dibit stream for an ethernet frame
-module eth_generator #(
+module eth_synth #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -155,24 +157,23 @@ module eth_generator #(
 
 // main processing ready for frame body
 wire main_rdy;
-wire efg_readclk, efg_outclk, efg_done;
-wire [BYTE_LEN-1:0] efg_out;
-wire btd_inclk, btd_outclk, btd_in_done, btd_rdy, btd_done;
-wire [BYTE_LEN-1:0] btd_in;
+wire eth_synth_readclk, eth_synth_outclk, eth_synth_done;
+wire [BYTE_LEN-1:0] eth_synth_out;
+wire btd_outclk, btd_done;
 wire [1:0] btd_out;
 wire crc_rst, crc_shift;
 wire [31:0] crc_out;
-eth_body_generator efg_inst(
+eth_body_synth eth_synth_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(in_done),
-	.inclk(inclk), .in(in), .readclk(efg_readclk),
+	.inclk(inclk), .in(in), .readclk(eth_synth_readclk),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
-	.outclk(efg_outclk), .out(efg_out),
-	.upstream_readclk(upstream_readclk), .done(efg_done));
+	.outclk(eth_synth_outclk), .out(eth_synth_out),
+	.upstream_readclk(upstream_readclk), .done(eth_synth_done));
 bytes_to_dibits_coord_buf btd_inst(
 	.clk(clk), .rst(rst || start),
-	.inclk(efg_outclk), .in(efg_out), .in_done(efg_done),
-	.downstream_rdy(main_rdy), .readclk(efg_readclk),
+	.inclk(eth_synth_outclk), .in(eth_synth_out), .in_done(eth_synth_done),
+	.downstream_rdy(main_rdy), .readclk(eth_synth_readclk),
 	.outclk(btd_outclk), .out(btd_out), .done(btd_done));
 crc32 crc32_inst(
 	.clk(clk), .rst(crc_rst), .shift(crc_shift),
