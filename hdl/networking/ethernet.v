@@ -40,13 +40,13 @@ assign out = inclk ? in : (ram_outclk ? ram_out : out_premux);
 wire outclk_internal;
 assign outclk = outclk_internal || ram_outclk || inclk;
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) outclk_delay(
-	.clk(clk), .reset(rst || start),
+	.clk(clk), .rst(rst || start),
 	.in(outclk_pd), .out(outclk_internal));
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY),
 	.DATA_WIDTH(BYTE_LEN)) out_delay(
-	.clk(clk), .reset(rst || start), .in(out_pd), .out(out_premux));
+	.clk(clk), .rst(rst || start), .in(out_pd), .out(out_premux));
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) done_delay(
-	.clk(clk), .reset(rst || start), .in(in_done), .out(done));
+	.clk(clk), .rst(rst || start), .in(in_done), .out(done));
 
 reg [2:0] state = STATE_IDLE;
 reg [2:0] cnt;

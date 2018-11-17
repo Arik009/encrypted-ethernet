@@ -1,5 +1,5 @@
 module rmii_driver(
-	input clk, reset,
+	input clk, rst,
 	inout crsdv_in,
 	inout [1:0] rxd_in,
 	output rxerr, intn,
@@ -19,9 +19,9 @@ module rmii_driver(
 localparam RESET_SETUP = 10;
 localparam RESET_HOLD = 5;
 localparam RESET_SEQUENCE_LEN = RESET_SETUP + RESET_HOLD;
-reg [clog2(RESET_SEQUENCE_LEN)-1:0] reset_cnt = 0;
-wire reset_done;
-assign reset_done = reset_cnt == RESET_SEQUENCE_LEN;
+reg [clog2(RESET_SEQUENCE_LEN)-1:0] rst_cnt = 0;
+wire rst_done;
+assign rst_done = rst_cnt == RESET_SEQUENCE_LEN;
 
 // 100Base-TX Full Duplex, auto-negotiation disabled,
 // CRS active during receive
@@ -30,20 +30,20 @@ localparam DEFAULT_MODE = 3'b011;
 localparam DEFAULT_PHYAD = 0;
 // REF_CLK in mode
 localparam DEFAULT_NINTSEL = 1;
-assign crsdv_in = reset_done ? 1'bz : DEFAULT_MODE[2];
-assign rxd_in = reset_done ? 2'bzz : DEFAULT_MODE[1:0];
-assign rxerr = reset_done ? 1'bz : DEFAULT_PHYAD;
-assign intn = reset_done ? 1'bz : DEFAULT_NINTSEL;
+assign crsdv_in = rst_done ? 1'bz : DEFAULT_MODE[2];
+assign rxd_in = rst_done ? 2'bzz : DEFAULT_MODE[1:0];
+assign rxerr = rst_done ? 1'bz : DEFAULT_PHYAD;
+assign intn = rst_done ? 1'bz : DEFAULT_NINTSEL;
 
 wire crsdv;
 wire [1:0] rxd;
 
 // assertion of CRS_DV is async wrt the REF_CLK, so synchronization needed
 delay #(.DELAY_LEN(SYNC_DELAY_LEN-1)) crsdv_sync(
-	.clk(clk), .reset(reset), .in(crsdv_in), .out(crsdv));
+	.clk(clk), .rst(rst), .in(crsdv_in), .out(crsdv));
 // delay rxd to be in time with crsdv
 delay #(.DELAY_LEN(SYNC_DELAY_LEN-1), .DATA_WIDTH(2)) rxd_sync(
-	.clk(clk), .reset(reset), .in(rxd_in), .out(rxd));
+	.clk(clk), .rst(rst), .in(rxd_in), .out(rxd));
 
 localparam STATE_IDLE = 2'b00;
 localparam STATE_WAITING = 2'b01;
@@ -53,7 +53,7 @@ reg [1:0] state = STATE_IDLE;
 
 reg prev_crsdv;
 always @(posedge clk) begin
-	if (reset_done)
+	if (rst_done)
 		prev_crsdv <= crsdv;
 end
 
@@ -65,17 +65,17 @@ assign crs = crsdv_toggling ? 0 : crsdv;
 assign dv = crsdv_toggling ? 1 : crsdv;
 
 always @(posedge clk) begin
-	if (reset) begin
-		reset_cnt <= 0;
+	if (rst) begin
+		rst_cnt <= 0;
 		rstn <= 0;
 		state <= STATE_IDLE;
 		out <= 0;
 		outclk <= 0;
 		done <= 0;
-	end else if (~reset_done) begin
-		if (reset_cnt == RESET_SETUP - 1)
+	end else if (~rst_done) begin
+		if (rst_cnt == RESET_SETUP - 1)
 			rstn <= 1;
-		reset_cnt <= reset_cnt + 1;
+		rst_cnt <= rst_cnt + 1;
 	end else case(state)
 	STATE_IDLE: begin
 		done <= 0;

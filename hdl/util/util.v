@@ -2,7 +2,7 @@ module delay #(
 	// number of delay cycles
 	parameter DELAY_LEN = 1,
 	parameter DATA_WIDTH = 1) (
-	input clk, reset, [DATA_WIDTH-1:0] in,
+	input clk, rst, [DATA_WIDTH-1:0] in,
 	output [DATA_WIDTH-1:0] out);
 
 reg [DELAY_LEN*DATA_WIDTH-1:0] queue;
@@ -10,7 +10,7 @@ assign out = queue[0+:DATA_WIDTH];
 
 always @ (posedge clk)
 begin
-	if (reset)
+	if (rst)
 		queue <= 0;
 	else if (DELAY_LEN == 1)
 		queue <= in;
@@ -21,14 +21,14 @@ end
 endmodule
 
 module debounce (
-	input reset, clk, noisy,
+	input rst, clk, noisy,
 	output reg clean);
 
 reg [19:0] count;
 reg prev;
 
 always @(posedge clk) begin
-	if (reset) begin
+	if (rst) begin
 		prev <= noisy;
 		clean <= noisy;
 		count <= 0;
@@ -43,22 +43,22 @@ end
 endmodule
 
 module sync_debounce (
-	input reset, clk, in,
+	input rst, clk, in,
 	output out);
 
 `include "params.vh"
 
 wire synced;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) delay_inst(
-	.clk(clk), .reset(reset), .in(in), .out(synced));
+	.clk(clk), .rst(rst), .in(in), .out(synced));
 debounce debounce_inst(
-	.reset(reset), .clk(clk), .noisy(synced), .clean(out));
+	.rst(rst), .clk(clk), .noisy(synced), .clean(out));
 
 endmodule
 
 module blinker #(
 	parameter BLINK_PERIOD = 50000000) (
-	input clk, reset, enable,
+	input clk, rst, enable,
 	output reg out = 0);
 
 `include "util.vh"
@@ -66,7 +66,7 @@ module blinker #(
 reg [clog2(BLINK_PERIOD)-1:0] cnt = 0;
 
 always @(posedge clk) begin
-	if (reset || !enable) begin
+	if (rst || !enable) begin
 		cnt <= 0;
 		out <= 0;
 	end else if (cnt == BLINK_PERIOD-1) begin
@@ -81,7 +81,7 @@ endmodule
 module pulse_extender #(
 	// time to extend pulse by, default 0.1s
 	parameter EXTEND_LEN = 5000000) (
-	input clk, reset, in, output out);
+	input clk, rst, in, output out);
 
 `include "util.vh"
 
@@ -91,7 +91,7 @@ assign done = cnt == 0;
 assign out = in || !done;
 
 always @(posedge clk) begin
-	if (reset)
+	if (rst)
 		cnt <= 0;
 	else if (in)
 		cnt <= EXTEND_LEN;
@@ -102,13 +102,13 @@ end
 endmodule
 
 module pulse_generator (
-	input clk, reset, in, output out);
+	input clk, rst, in, output out);
 
 reg pulsed = 0;
 assign out = in && !pulsed;
 
 always @(posedge clk) begin
-	if (reset)
+	if (rst)
 		pulsed <= 0;
 	else if (in)
 		pulsed <= 1;

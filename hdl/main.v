@@ -1,56 +1,3 @@
-// streams ram memory over ethernet
-// TODO: upgrade this to include packet headers and crc
-module packet_synth #(
-	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
-	input clk, reset,
-	input start,
-	// location of data in memory
-	// data_ram_end_in, as usual, points to one byte after the last byte
-	input [clog2(RAM_SIZE)-1:0] data_ram_start_in, data_ram_end_in,
-	output eth_txen,
-	output [1:0] eth_txd);
-
-`include "params.vh"
-
-reg [clog2(RAM_SIZE)-1:0] data_ram_end, ram_addr;
-wire [clog2(RAM_SIZE)-1:0] next_ram_addr;
-assign next_ram_addr = ram_addr + 1;
-
-reg reading = 0;
-
-wire clk_div4;
-clock_divider #(.PULSE_PERIOD(4)) clk_div4_inst(
-	.clk(clk), .start(start), .en(reading), .out(clk_div4));
-
-wire ram_read_ready;
-wire [BYTE_LEN-1:0] ram_read_out;
-packet_synth_rom_driver packet_synth_rom_driver_inst(
-	.clk(clk), .rst(reset),
-	.readclk(clk_div4), .raddr(ram_addr),
-	.outclk(ram_read_ready), .out(ram_read_out));
-wire [1:0] btd_out;
-bytes_to_dibits btd_inst(
-	.clk(clk), .reset(reset), .inclk(ram_read_ready),
-	.in(ram_read_out), .done_in(0),
-	.out(btd_out), .outclk(eth_txen));
-assign eth_txd = eth_txen ? btd_out : 2'b00;
-
-always @(posedge clk) begin
-	if (reset)
-		reading <= 0;
-	else if (start) begin
-		ram_addr <= data_ram_start_in;
-		data_ram_end <= data_ram_end_in;
-		reading <= 1;
-	end else if(clk_div4) begin
-		if (next_ram_addr == data_ram_end)
-			reading <= 0;
-		ram_addr <= next_ram_addr;
-	end
-end
-
-endmodule
-
 // SW[0]: reset
 // SW[1]: master configure: on for transmit, off for receive
 // BTNC: dump ram
@@ -107,9 +54,9 @@ clk_wiz_0 clk_wiz_inst(
 
 wire sw0, sw1;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
-	.clk(clk), .reset(0), .in(SW[0]), .out(sw0));
+	.clk(clk), .rst(0), .in(SW[0]), .out(sw0));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
-	.clk(clk), .reset(0), .in(SW[1]), .out(sw1));
+	.clk(clk), .rst(0), .in(SW[1]), .out(sw1));
 
 wire config_transmit;
 assign config_transmit = sw1;
@@ -123,9 +70,10 @@ end
 wire config_change_reset;
 assign config_change_reset = sw1 != prev_sw1;
 
+wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
 pulse_extender reset_pe(
-	.clk(clk), .reset(0), .in(sw0 || config_change_reset), .out(reset));
+	.clk(clk), .rst(0), .in(sw0 || config_change_reset), .out(rst));
 
 wire [31:0] hex_display_data;
 wire [6:0] segments;
@@ -161,34 +109,34 @@ assign vga_vs_out = vga_vsync;
 
 // buffer all outputs
 delay #(.DATA_WIDTH(4)) vga_r_sync(
-	.clk(clk), .reset(reset), .in(vga_r_out), .out(VGA_R));
+	.clk(clk), .rst(rst), .in(vga_r_out), .out(VGA_R));
 delay #(.DATA_WIDTH(4)) vga_g_sync(
-	.clk(clk), .reset(reset), .in(vga_g_out), .out(VGA_G));
+	.clk(clk), .rst(rst), .in(vga_g_out), .out(VGA_G));
 delay #(.DATA_WIDTH(4)) vga_b_sync(
-	.clk(clk), .reset(reset), .in(vga_b_out), .out(VGA_B));
+	.clk(clk), .rst(rst), .in(vga_b_out), .out(VGA_B));
 delay vga_hs_sync(
-	.clk(clk), .reset(reset), .in(vga_hsync), .out(VGA_HS));
+	.clk(clk), .rst(rst), .in(vga_hsync), .out(VGA_HS));
 delay vga_vs_sync(
-	.clk(clk), .reset(reset), .in(vga_vsync), .out(VGA_VS));
+	.clk(clk), .rst(rst), .in(vga_vsync), .out(VGA_VS));
 
 assign UART_CTS = 1;
 
 wire btnc_raw, btnl_raw, btnc, btnl;
 sync_debounce sd_btnc(
-	.reset(reset), .clk(clk), .in(BTNC), .out(btnc_raw));
+	.rst(rst), .clk(clk), .in(BTNC), .out(btnc_raw));
 sync_debounce sd_btnl(
-	.reset(reset), .clk(clk), .in(BTNL), .out(btnl_raw));
+	.rst(rst), .clk(clk), .in(BTNL), .out(btnl_raw));
 
 pulse_generator pg_btnc(
-	.clk(clk), .reset(reset), .in(btnc_raw), .out(btnc));
+	.clk(clk), .rst(rst), .in(btnc_raw), .out(btnc));
 pulse_generator pg_btnl(
-	.clk(clk), .reset(reset), .in(btnl_raw), .out(btnl));
+	.clk(clk), .rst(rst), .in(btnl_raw), .out(btnl));
 
 wire ram_readclk, ram_outclk, ram_we;
 wire [clog2(PACKET_BUFFER_SIZE)-1:0] ram_raddr, ram_waddr;
 wire [BYTE_LEN-1:0] ram_out, ram_win;
 packet_buffer_ram_driver ram_driv_inst(
-	.clk(clk), .rst(reset),
+	.clk(clk), .rst(rst),
 	.readclk(ram_readclk), .raddr(ram_raddr),
 	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
 	.outclk(ram_outclk), .out(ram_out));
@@ -197,7 +145,7 @@ wire vram_readclk, vram_outclk, vram_we;
 wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
 wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .rst(reset),
+	.clk(clk), .rst(rst),
 	.readclk(vram_readclk), .raddr(vram_raddr),
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
 	.outclk(vram_outclk), .out(vram_out));
@@ -218,10 +166,10 @@ assign ram_win =
 wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst (
-	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 stream_to_memory uart_stm_inst(
-	.clk(clk), .rst(reset),
+	.clk(clk), .rst(rst),
 	.set_offset_req(1'b0), .set_offset_val(0),
 	.inclk(uart_rx_outclk), .in(uart_rx_out),
 	.ram_we(uart_ram_we), .ram_waddr(uart_ram_waddr),
@@ -233,14 +181,14 @@ wire uart_txd;
 wire uart_sfm_start;
 assign uart_sfm_start = btnc;
 uart_tx_fast_stream_driver uart_tx_inst(
-	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.start(uart_sfm_start),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.ready(uart_tx_ready));
 stream_from_memory uart_sfm_inst(
-	.clk(clk), .rst(reset), .start(uart_sfm_start),
+	.clk(clk), .rst(rst), .start(uart_sfm_start),
 	.read_start(0), .read_end(PACKET_BUFFER_SIZE),
-	.downstream_rdy(uart_tx_ready),
+	.readclk(uart_tx_ready),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
@@ -248,17 +196,17 @@ stream_from_memory uart_sfm_inst(
 wire btc_vram_outclk;
 wire [COLOR_LEN-1:0] btc_vram_out;
 bytes_to_colors btc_vram(
-	.clk(clk), .reset(reset), .inclk(uart_rx_outclk), .in(uart_rx_out),
+	.clk(clk), .rst(rst), .inclk(uart_rx_outclk), .in(uart_rx_out),
 	.outclk(btc_vram_outclk), .out(btc_vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_vram(
-	.clk(clk), .rst(reset), .set_offset_req(0), .set_offset_val(0),
+	.clk(clk), .rst(rst), .set_offset_req(0), .set_offset_val(0),
 	.inclk(btc_vram_outclk), .in(btc_vram_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
 
 graphics_main graphics_main_inst(
-	.clk(clk), .reset(reset), .blank(blank),
+	.clk(clk), .rst(rst), .blank(blank),
 	.vga_x(vga_x), .vga_y(vga_y),
 	.vga_hsync_in(vga_hsync_predelay), .vga_vsync_in(vga_vsync_predelay),
 	.ram_read_ready(vram_outclk), .ram_read_val(vram_out),
@@ -272,14 +220,14 @@ assign ETH_MDIO = 0;
 wire eth_outclk, eth_done, eth_byte_outclk, eth_dtb_done;
 wire [1:0] eth_out;
 rmii_driver rmii_driv_inst(
-	.clk(clk), .reset(reset),
+	.clk(clk), .rst(rst),
 	.crsdv_in(ETH_CRSDV), .rxd_in(ETH_RXD),
 	.rxerr(ETH_RXERR),
 	.intn(ETH_INTN), .rstn(ETH_RSTN),
 	.out(eth_out),
 	.outclk(eth_outclk), .done(eth_done));
 dibits_to_bytes eth_dtb(
-	.clk(clk), .reset(reset),
+	.clk(clk), .rst(rst),
 	.inclk(eth_outclk), .in(eth_out), .done_in(eth_done),
 	.out(eth_ram_win), .outclk(eth_byte_outclk),
 	.done_out(eth_dtb_done));
@@ -290,7 +238,7 @@ localparam MAX_ETH_FRAME_LEN = 1522;
 reg [clog2(MAX_ETH_FRAME_LEN)-1:0] eth_byte_cnt = 0;
 reg record = 1;
 always @(posedge clk) begin
-	if (reset) begin
+	if (rst) begin
 		eth_byte_cnt <= 0;
 		record <= 1;
 	end else if (eth_done) begin
@@ -303,29 +251,27 @@ assign eth_ram_waddr = eth_byte_cnt;
 
 wire eth_txen;
 wire [1:0] eth_txd;
-packet_synth packet_synth_inst(
-	.clk(clk), .reset(reset), .start(btnl),
-	.data_ram_start_in(0), .data_ram_end_in(73),
-	.eth_txen(eth_txen), .eth_txd(eth_txd));
+// to be connected to eth_frame_generator
+assign eth_txen = 0;
 
 // buffer the outputs so that eth_txd calculation would be
 // under timing constraints
 delay eth_txen_delay(
-	.clk(clk), .reset(reset), .in(eth_txen), .out(ETH_TXEN));
+	.clk(clk), .rst(rst), .in(eth_txen), .out(ETH_TXEN));
 delay #(.DATA_WIDTH(2)) eth_txd_delay(
-	.clk(clk), .reset(reset), .in(eth_txd), .out(ETH_TXD));
+	.clk(clk), .rst(rst), .in(eth_txd), .out(ETH_TXD));
 
 // DEBUGGING SIGNALS
 
 wire blink;
 blinker blinker_inst(
-	.clk(clk), .reset(reset),
+	.clk(clk), .rst(rst),
 	.enable(1), .out(blink));
 
 assign LED = {
 	SW[15:2],
 	blink,
-	reset
+	rst
 };
 
 assign hex_display_data = {

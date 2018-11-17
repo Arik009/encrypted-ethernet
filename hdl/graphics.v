@@ -1,6 +1,6 @@
 module graphics_main #(
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
-	input clk, reset, blank,
+	input clk, rst, blank,
 	input [clog2(VGA_WIDTH)-1:0] vga_x,
 	input [clog2(VGA_HEIGHT)-1:0] vga_y,
 	input vga_hsync_in, vga_vsync_in,
@@ -12,9 +12,9 @@ module graphics_main #(
 `include "params.vh"
 
 delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) hsync_delay(
-	.clk(clk), .reset(reset), .in(vga_hsync_in), .out(vga_hsync_out));
+	.clk(clk), .rst(rst), .in(vga_hsync_in), .out(vga_hsync_out));
 delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) vsync_delay(
-	.clk(clk), .reset(reset), .in(vga_vsync_in), .out(vga_vsync_out));
+	.clk(clk), .rst(rst), .in(vga_vsync_in), .out(vga_vsync_out));
 
 wire [4:0] image_x, image_y;
 assign image_x = vga_x[8:4];

@@ -2,7 +2,7 @@
 module dibits_to_bytes(
 	// inclk is pulsed when a dibit is presented on in
 	// outclk is pulsed when a byte is presented on out
-	input clk, reset, inclk,
+	input clk, rst, inclk,
 	input [1:0] in,
 	input done_in,
 	output reg outclk = 0,
@@ -12,7 +12,7 @@ module dibits_to_bytes(
 `include "params.vh"
 
 delay #(.DELAY_LEN(1)) done_delay(
-	.clk(clk), .reset(reset), .in(done_in), .out(done_out));
+	.clk(clk), .rst(rst), .in(done_in), .out(done_out));
 
 // scratch space to shift dibits in
 reg [BYTE_LEN-3:0] shifted;
@@ -20,7 +20,7 @@ reg [BYTE_LEN-3:0] shifted;
 reg [clog2(BYTE_LEN)-2:0] cnt = 0;
 
 always @(posedge clk) begin
-	if (reset) begin
+	if (rst) begin
 		cnt <= 0;
 		outclk <= 0;
 		out <= 0;
@@ -98,7 +98,7 @@ end
 endmodule
 
 module bytes_to_colors(
-	input clk, reset,
+	input clk, rst,
 	input inclk, input [BYTE_LEN-1:0] in,
 	output reg outclk, output reg [COLOR_LEN-1:0] out);
 
@@ -110,7 +110,7 @@ reg [BYTE_LEN-1:0] prev_in;
 
 always @(posedge clk) begin
 	prev_in <= in;
-	if (reset)
+	if (rst)
 		state <= 0;
 	else if (inclk) begin
 		case (state)
@@ -165,13 +165,13 @@ assign idle = !first_word && ram_raddr == read_end_buf;
 
 wire prev_readclk;
 delay readclk_delay(
-	.clk(clk), .reset(rst), .in(readclk), .out(prev_readclk));
+	.clk(clk), .rst(rst), .in(readclk), .out(prev_readclk));
 
 // delay done so it appears when data comes out of ram
 wire done_pd;
 assign done_pd = outclk && (ram_raddr + 1 == read_end_buf);
 delay #(.DELAY_LEN(RAM_READ_LATENCY)) done_delay(
-	.clk(clk), .reset(rst), .in(done_pd), .out(done));
+	.clk(clk), .rst(rst), .in(done_pd), .out(done));
 
 always @(posedge clk) begin
 	if (rst) begin

@@ -3,7 +3,7 @@
 module uart_rx_fast_driver #(
 	// 120MBaud * 10 = 120MHz
 	parameter CYCLES_PER_BIT = 10) (
-	input clk, clk_120mhz, reset,
+	input clk, clk_120mhz, rst,
 	input rxd,
 	output [7:0] out, output outclk);
 
@@ -24,20 +24,20 @@ reg [BYTE_LEN-1:0] out_120mhz;
 wire fifo_empty, fifo_rden;
 assign fifo_rden = !fifo_empty;
 byte_stream_fifo data_fifo(
-	.rst(reset),
+	.rst(rst),
 	.wr_clk(clk_120mhz), .rd_clk(clk),
 	.din(out_120mhz), .wr_en(outclk_120mhz),
 	.rd_en(fifo_rden), .dout(out),
 	.empty(fifo_empty));
 delay fifo_read_delay(
-	.clk(clk), .reset(reset), .in(fifo_rden), .out(outclk));
-wire reset_120mhz;
+	.clk(clk), .rst(rst), .in(fifo_rden), .out(outclk));
+wire rst_120mhz;
 reset_stream_fifo reset_fifo_inst(
 	.clka(clk), .clkb(clk_120mhz),
-	.reseta(reset), .resetb(reset_120mhz));
+	.rsta(rst), .rstb(rst_120mhz));
 
 always @(posedge clk_120mhz) begin
-	if (reset_120mhz) begin
+	if (rst_120mhz) begin
 		bit_in_byte_cnt <= 0;
 		start_bit_cnt <= 0;
 		outclk_120mhz <= 0;
@@ -79,16 +79,16 @@ endmodule
 
 // expose a stream interface to request one byte at a time
 module uart_tx_fast_stream_driver(
-	input clk, clk_120mhz, reset, start,
+	input clk, clk_120mhz, rst, start,
 	input inclk, input [7:0] in,
 	output txd, output ready);
 
 wire driv_rdy;
 uart_tx_fast_driver uart_driv_inst(
-	.clk(clk), .clk_120mhz(clk_120mhz), .reset(reset),
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.inclk(inclk), .in(in), .txd(txd), .ready(driv_rdy));
 stream_coord sc_inst(
-	.clk(clk), .rst(reset || start),
+	.clk(clk), .rst(rst || start),
 	.downstream_rdy(driv_rdy), .downstream_inclk(inclk),
 	.readclk(ready));
 
@@ -99,7 +99,7 @@ endmodule
 module uart_tx_fast_driver #(
 	// 120MBaud * 10 = 120MHz
 	parameter CYCLES_PER_BIT = 10) (
-	input clk, clk_120mhz, reset,
+	input clk, clk_120mhz, rst,
 	input inclk, input [7:0] in,
 	output txd,
 	// ready is asserted to request for a new byte to transmit
@@ -121,31 +121,31 @@ reg [clog2(BYTE_LEN+2)-1:0] bits_left_cnt = 0;
 wire [BYTE_LEN-1:0] in_120mhz;
 wire inclk_120mhz;
 
-wire reset_120mhz;
+wire rst_120mhz;
 reset_stream_fifo reset_fifo_inst(
 	.clka(clk), .clkb(clk_120mhz),
-	.reseta(reset), .resetb(reset_120mhz));
+	.rsta(rst), .rstb(rst_120mhz));
 wire fifo_empty, fifo_full, fifo_rden;
 assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
 byte_stream_fifo data_fifo(
-	.rst(reset),
+	.rst(rst),
 	.wr_clk(clk), .rd_clk(clk_120mhz),
 	.din(in), .wr_en(inclk),
 	.rd_en(fifo_rden), .dout(in_120mhz),
 	.full(fifo_full), .empty(fifo_empty));
 delay fifo_read_delay(
-	.clk(clk_120mhz), .reset(reset_120mhz),
+	.clk(clk_120mhz), .rst(rst_120mhz),
 	.in(fifo_rden), .out(inclk_120mhz));
 // delay tx_clk by one cycle to account for fifo read time
 wire tx_clk_delayed;
 delay tx_clk_delay(
-	.clk(clk_120mhz), .reset(reset_120mhz),
+	.clk(clk_120mhz), .rst(rst_120mhz),
 	.in(tx_clk), .out(tx_clk_delayed));
 
 assign ready = !fifo_full;
 
 always @(posedge clk_120mhz) begin
-	if (reset_120mhz) begin
+	if (rst_120mhz) begin
 		bits_left_cnt <= 0;
 		curr_byte_shifted <= ~0;
 	end else if (tx_clk_delayed) begin
