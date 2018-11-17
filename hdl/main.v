@@ -228,9 +228,9 @@ rmii_driver rmii_driv_inst(
 	.outclk(eth_outclk), .done(eth_done));
 dibits_to_bytes eth_dtb(
 	.clk(clk), .rst(rst),
-	.inclk(eth_outclk), .in(eth_out), .done_in(eth_done),
+	.inclk(eth_outclk), .in(eth_out), .in_done(eth_done),
 	.out(eth_ram_win), .outclk(eth_byte_outclk),
-	.done_out(eth_dtb_done));
+	.done(eth_dtb_done));
 assign eth_ram_we = eth_byte_outclk;
 
 // maximum ethernet frame length is 1522 bytes

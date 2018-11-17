@@ -4,10 +4,9 @@ module rmii_driver(
 	inout [1:0] rxd_in,
 	output rxerr, intn,
 	output reg rstn = 1,
-	// done is pulsed once a full packet has been received
-	// this will never be asserted at the same time as outclk
 	output reg [1:0] out = 0,
-	output reg outclk = 0, done = 0);
+	// done is pulsed at the same time as the last dibit of a full packet
+	output reg outclk = 0, output done);
 
 `include "params.vh"
 
@@ -45,10 +44,10 @@ delay #(.DELAY_LEN(SYNC_DELAY_LEN-1)) crsdv_sync(
 delay #(.DELAY_LEN(SYNC_DELAY_LEN-1), .DATA_WIDTH(2)) rxd_sync(
 	.clk(clk), .rst(rst), .in(rxd_in), .out(rxd));
 
-localparam STATE_IDLE = 2'b00;
-localparam STATE_WAITING = 2'b01;
-localparam STATE_PREAMBLE = 2'b11;
-localparam STATE_RECEIVING = 2'b10;
+localparam STATE_IDLE = 0;
+localparam STATE_WAITING = 1;
+localparam STATE_PREAMBLE = 2;
+localparam STATE_RECEIVING = 3;
 reg [1:0] state = STATE_IDLE;
 
 reg prev_crsdv;
@@ -63,6 +62,7 @@ wire crsdv_toggling, crs, dv;
 assign crsdv_toggling = prev_crsdv != crsdv;
 assign crs = crsdv_toggling ? 0 : crsdv;
 assign dv = crsdv_toggling ? 1 : crsdv;
+assign done = (state == STATE_RECEIVING) && !dv;
 
 always @(posedge clk) begin
 	if (rst) begin
@@ -71,17 +71,14 @@ always @(posedge clk) begin
 		state <= STATE_IDLE;
 		out <= 0;
 		outclk <= 0;
-		done <= 0;
 	end else if (~rst_done) begin
 		if (rst_cnt == RESET_SETUP - 1)
 			rstn <= 1;
 		rst_cnt <= rst_cnt + 1;
 	end else case(state)
-	STATE_IDLE: begin
-		done <= 0;
+	STATE_IDLE:
 		if (crsdv)
 			state <= STATE_WAITING;
-	end
 	STATE_WAITING:
 		if (!crsdv)
 			state <= STATE_IDLE;
@@ -94,16 +91,14 @@ always @(posedge clk) begin
 		else if (rxd == 2'b11) begin
 			state <= STATE_RECEIVING;
 		end
-	STATE_RECEIVING: begin
+	STATE_RECEIVING:
 		if (!dv) begin
 			state <= STATE_IDLE;
 			outclk <= 0;
-			done <= 1;
 		end else begin
 			outclk <= 1;
 			out <= rxd;
 		end
-	end
 	endcase
 end
 

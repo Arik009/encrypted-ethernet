@@ -1,45 +1,34 @@
 // convert a dibit stream to a bytestream
+// no latency between in and out
 module dibits_to_bytes(
 	// inclk is pulsed when a dibit is presented on in
 	// outclk is pulsed when a byte is presented on out
 	input clk, rst, inclk,
 	input [1:0] in,
-	input done_in,
-	output reg outclk = 0,
-	output reg [BYTE_LEN-1:0] out = 0,
-	output done_out);
+	input in_done,
+	output outclk,
+	output [BYTE_LEN-1:0] out,
+	output done);
 
 `include "params.vh"
-
-delay #(.DELAY_LEN(1)) done_delay(
-	.clk(clk), .rst(rst), .in(done_in), .out(done_out));
 
 // scratch space to shift dibits in
 reg [BYTE_LEN-3:0] shifted;
 // only need half as much since we get 2 bits at a time
 reg [clog2(BYTE_LEN)-2:0] cnt = 0;
 
+assign out = {in, shifted};
+assign outclk = inclk && cnt == BYTE_LEN/2-1;
+assign done = in_done;
+
 always @(posedge clk) begin
-	if (rst) begin
+	if (rst || in_done) begin
 		cnt <= 0;
-		outclk <= 0;
-		out <= 0;
-	end else if (inclk) begin
-		if (cnt == BYTE_LEN/2 - 1) begin
-			out <= {in, shifted};
-			outclk <= 1;
-		end else
-			outclk <= 0;
+	end else if (outclk)
+		cnt <= 0;
+	else if (inclk) begin
 		shifted <= {in, shifted[2+:BYTE_LEN-4]};
-		if (done_in)
-			cnt <= 0;
-		else
-			// assumes BYTE_LEN is a power of 2 so it wraps around
-			cnt <= cnt + 1;
-	end else begin
-		if (done_in)
-			cnt <= 0;
-		outclk <= 0;
+		cnt <= cnt + 1;
 	end
 end
 
@@ -54,7 +43,7 @@ module bytes_to_dibits(
 	input in_done,
 	output reg outclk = 0, output [1:0] out,
 	output rdy,
-	// done_out is pulsed after done_in when buffer has been cleared
+	// done is pulsed after done_in when buffer has been cleared
 	output done);
 
 `include "params.vh"
@@ -285,5 +274,32 @@ single_word_buffer #(.DATA_WIDTH(DATA_WIDTH+1)) swb_inst(
 	.inclk(inclk), .in({in, in_done}),
 	.empty(swb_empty), .out({out, done}));
 assign outclk = !rst && !swb_empty && downstream_rdy;
+
+endmodule
+
+// coordinated, buffered version of bytes_to_dibits
+module bytes_to_dibits_coord_buf(
+	input clk, rst, inclk,
+	input [BYTE_LEN-1:0] in,
+	input in_done, downstream_rdy,
+	output readclk, outclk,
+	output [1:0] out,
+	output done);
+
+`include "params.vh"
+
+wire btd_rdy, btd_inclk, btd_in_done;
+wire [BYTE_LEN-1:0] btd_in;
+stream_coord_buf #(.DATA_WIDTH(BYTE_LEN)) btd_scb_inst(
+	.clk(clk), .rst(rst),
+	.inclk(inclk), .in(in),
+	.in_done(in_done), .downstream_rdy(btd_rdy && downstream_rdy),
+	.outclk(btd_inclk), .out(btd_in), .done(btd_in_done),
+	.readclk(readclk));
+bytes_to_dibits btd_inst(
+	.clk(clk), .rst(rst),
+	.inclk(btd_inclk), .in(btd_in), .in_done(btd_in_done),
+	.outclk(outclk), .out(out),
+	.rdy(btd_rdy), .done(done));
 
 endmodule

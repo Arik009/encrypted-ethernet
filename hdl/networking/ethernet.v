@@ -1,9 +1,9 @@
 // generate an ethernet frame on the level of bytes
 // CRC needs to be generated on the level of dibits,
-// which is handled in eth_frame_generator
+// which is handled in eth_generator
 // expects payload and rom delay of PACKET_SYNTH_ROM_DELAY
 // exposes readclk to out latency of PACKET_SYNTH_ROM_DELAY
-module eth_frame_byte_generator #(
+module eth_body_generator #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -15,15 +15,13 @@ module eth_frame_byte_generator #(
 
 `include "params.vh"
 `include "packet_synth_rom_layout.vh"
+`include "networking.vh"
 
 localparam STATE_IDLE = 0;
 localparam STATE_MAC_DST = 1;
 localparam STATE_MAC_SRC = 2;
 localparam STATE_ETHERTYPE = 3;
 localparam STATE_PAYLOAD = 4;
-
-localparam MAC_LEN = 6;
-localparam ETHERTYPE_LEN = 2;
 
 // "pre-delayed" versions of outputs, to be combined with
 // ram read results
@@ -72,7 +70,7 @@ always @(posedge clk) begin
 	end else if (readclk) begin
 		case (state)
 		STATE_MAC_DST:
-			if (cnt == MAC_LEN -1) begin
+			if (cnt == ETH_MAC_LEN-1) begin
 				cnt <= 0;
 				state <= STATE_MAC_SRC;
 				ram_raddr <= MAC_SEND_OFF;
@@ -81,7 +79,7 @@ always @(posedge clk) begin
 				ram_raddr <= ram_raddr + 1;
 			end
 		STATE_MAC_SRC:
-			if (cnt == MAC_LEN -1) begin
+			if (cnt == ETH_MAC_LEN-1) begin
 				cnt <= 0;
 				state <= STATE_ETHERTYPE;
 			end else begin
@@ -89,7 +87,7 @@ always @(posedge clk) begin
 				ram_raddr <= ram_raddr + 1;
 			end
 		STATE_ETHERTYPE:
-			if (cnt == ETHERTYPE_LEN-1) begin
+			if (cnt == ETH_ETHERTYPE_LEN-1) begin
 				state <= STATE_PAYLOAD;
 			end else
 				cnt <= cnt + 1;
@@ -142,7 +140,7 @@ end
 endmodule
 
 // creates continuous dibit stream for an ethernet frame
-module eth_frame_generator #(
+module eth_generator #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -153,6 +151,7 @@ module eth_frame_generator #(
 	output upstream_readclk, done);
 
 `include "params.vh"
+`include "networking.vh"
 
 // main processing ready for frame body
 wire main_rdy;
@@ -163,44 +162,37 @@ wire [BYTE_LEN-1:0] btd_in;
 wire [1:0] btd_out;
 wire crc_rst, crc_shift;
 wire [31:0] crc_out;
-eth_frame_byte_generator efg_inst(
+eth_body_generator efg_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(in_done),
 	.inclk(inclk), .in(in), .readclk(efg_readclk),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(efg_outclk), .out(efg_out),
 	.upstream_readclk(upstream_readclk), .done(efg_done));
-stream_coord_buf #(.DATA_WIDTH(BYTE_LEN)) btd_scb_inst(
+bytes_to_dibits_coord_buf btd_inst(
 	.clk(clk), .rst(rst || start),
-	.inclk(efg_outclk), .in(efg_out),
-	.in_done(efg_done), .downstream_rdy(btd_rdy && main_rdy),
-	.outclk(btd_inclk), .out(btd_in), .done(btd_in_done),
-	.readclk(efg_readclk));
-bytes_to_dibits btd_inst(
-	.clk(clk), .rst(rst || start),
-	.inclk(btd_inclk), .in(btd_in),
-	.in_done(btd_in_done), .outclk(btd_outclk), .out(btd_out),
-	.rdy(btd_rdy), .done(btd_done));
+	.inclk(efg_outclk), .in(efg_out), .in_done(efg_done),
+	.downstream_rdy(main_rdy), .readclk(efg_readclk),
+	.outclk(btd_outclk), .out(btd_out), .done(btd_done));
 crc32 crc32_inst(
 	.clk(clk), .rst(crc_rst), .shift(crc_shift),
 	.inclk(btd_outclk), .in(btd_out), .out(crc_out));
-
-// measured in dibits
-localparam PREAMBLE_LEN = 32;
-localparam CRC_LEN = 16;
 
 localparam STATE_IDLE = 0;
 localparam STATE_PREAMBLE = 1;
 localparam STATE_BODY = 2;
 localparam STATE_CRC = 3;
+localparam STATE_GAP = 4;
 
-reg [1:0] state = STATE_IDLE;
-reg [4:0] cnt;
+reg [2:0] state = STATE_IDLE;
+reg [5:0] cnt;
 // sfd indicates that we have reached the end of the preamble
-wire sfd, end_of_crc;
-assign sfd = (state == STATE_PREAMBLE) && (cnt == PREAMBLE_LEN-1);
-assign end_of_crc = (state == STATE_CRC) && (cnt == CRC_LEN-1);
+wire sfd, crc_done;
+// multiply by 4 since we're measuring in dibits
+assign sfd = (state == STATE_PREAMBLE) && (cnt == ETH_PREAMBLE_LEN*4-1);
+assign crc_done = (state == STATE_CRC) && (cnt == ETH_CRC_LEN*4-1);
 assign crc_shift = state == STATE_CRC;
+assign gap_done = (state == STATE_GAP) && (cnt == ETH_GAP_LEN*4-1);
 assign out =
 	(state == STATE_BODY) ? btd_out :
 	sfd ? 2'b11 :
@@ -208,7 +200,7 @@ assign out =
 	crc_out[0+:2];
 assign crc_rst = rst || sfd;
 assign main_rdy = sfd || (state == STATE_BODY);
-assign done = end_of_crc;
+assign done = gap_done;
 assign outclk = btd_outclk ||
 	(state == STATE_PREAMBLE) ||
 	(state == STATE_CRC);
@@ -224,10 +216,77 @@ always @(posedge clk) begin
 	else if (state == STATE_BODY && btd_done) begin
 		state <= STATE_CRC;
 		cnt <= 0;
-	end else if (end_of_crc)
+	end else if (crc_done) begin
+		state <= STATE_GAP;
+		cnt <= 0;
+	end else if (gap_done)
 		state <= STATE_IDLE;
 	else
 		cnt <= cnt + 1;
+end
+
+endmodule
+
+module eth_parser(
+	input clk, rst, inclk,
+	input [1:0] in, input in_done,
+	// downstream_done must be asserted on the same cycle as outclk
+	// on the last byte of payload processing for correct error detection
+	input downstream_done,
+	output outclk, output [BYTE_LEN-1:0] out,
+	output err);
+
+`include "params.vh"
+`include "networking.vh"
+
+wire dtb_outclk, dtb_done;
+wire [BYTE_LEN-1:0] dtb_out;
+dibits_to_bytes dtb_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(dtb_outclk), .out(dtb_out), .done(dtb_done));
+
+localparam STATE_MAC_DST = 0;
+localparam STATE_MAC_SRC = 1;
+localparam STATE_ETHERTYPE = 2;
+localparam STATE_PAYLOAD = 3;
+localparam STATE_CRC = 4;
+localparam STATE_DONE = 5;
+
+reg [2:0] state = STATE_MAC_DST;
+reg [2:0] cnt;
+reg idle = 1;
+assign err = (!idle && !inclk) ||
+	(state == STATE_DONE && inclk && in != 2'b00);
+
+assign out = dtb_out;
+assign outclk = dtb_outclk;
+
+always @(posedge clk) begin
+	if (rst || !inclk) begin
+		state <= STATE_MAC_DST;
+		cnt <= 0;
+		idle <= 1;
+	end else if (dtb_outclk) begin
+		if (state == STATE_MAC_DST && cnt == ETH_MAC_LEN-1) begin
+			state <= STATE_MAC_SRC;
+			cnt <= 0;
+		end else if (state == STATE_MAC_SRC && cnt == ETH_MAC_LEN-1) begin
+			state <= STATE_ETHERTYPE;
+			cnt <= 0;
+		end else if (state == STATE_ETHERTYPE
+				&& cnt == ETH_ETHERTYPE_LEN-1)
+			state <= STATE_PAYLOAD;
+		else if (state == STATE_PAYLOAD && downstream_done) begin
+			state <= STATE_CRC;
+			cnt <= 0;
+		end else if (state == STATE_CRC && cnt == ETH_CRC_LEN-1) begin
+			state <= STATE_DONE;
+			idle <= 1;
+		end else if (state != STATE_DONE) begin
+			idle <= 0;
+			cnt <= cnt + 1;
+		end
+	end
 end
 
 endmodule

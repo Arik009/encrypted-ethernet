@@ -31,8 +31,8 @@ rmii_driver rmii_driv_inst(
 	.outclk(eth_outclk), .done(eth_done));
 dibits_to_bytes eth_dtb(
 	.clk(clk), .rst(rst),
-	.inclk(eth_outclk), .in(eth_out), .done_in(eth_done),
-	.out(eth_byte_out), .outclk(eth_byte_outclk), .done_out(eth_dtb_done));
+	.inclk(eth_outclk), .in(eth_out), .in_done(eth_done),
+	.out(eth_byte_out), .outclk(eth_byte_outclk), .done(eth_dtb_done));
 
 initial begin
 	#100
@@ -241,7 +241,7 @@ stream_from_memory #(
 	.ram_outclk(rom1_outclk), .ram_out(rom1_out),
 	.ram_readclk(rom1_readclk), .ram_raddr(rom1_raddr),
 	.outclk(efg_inclk), .out(efg_in), .done(sfm_done));
-eth_frame_generator efg_inst(
+eth_generator efg_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(sfm_done),
 	.inclk(efg_inclk), .in(efg_in),
 	.ram_outclk(rom2_outclk), .ram_out(rom2_out),
@@ -257,7 +257,7 @@ initial begin
 	start = 0;
 
 	// bytes * dibits/byte * ns/dibit
-	#(76 * 4 * 20)
+	#(88 * 4 * 20)
 
 	#400
 
@@ -432,6 +432,64 @@ initial begin
 	btc_inclk = 1;
 	#(6 * 20)
 	#100
+	$stop();
+end
+
+endmodule
+
+module test_packet_parse();
+
+`include "params.vh"
+`include "packet_synth_rom_layout.vh"
+
+reg clk = 0;
+// 50MHz clock
+initial forever #10 clk = ~clk;
+
+localparam RAM_SIZE = PACKET_SYNTH_ROM_SIZE;
+
+reg rst = 1, start = 0;
+wire rom_readclk, rom_outclk;
+wire [clog2(RAM_SIZE)-1:0] rom_raddr;
+wire [BYTE_LEN-1:0] rom_out;
+wire sfm_readclk;
+wire btd_inclk, btd_in_done;
+wire [BYTE_LEN-1:0] btd_in;
+wire eth_parse_inclk, eth_parse_in_done;
+wire [1:0] eth_parse_in;
+packet_synth_rom_driver psr_inst(
+	.clk(clk), .rst(rst),
+	.readclk(rom_readclk), .raddr(rom_raddr),
+	.outclk(rom_outclk), .out(rom_out));
+stream_from_memory #(
+	.RAM_SIZE(RAM_SIZE), .RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY))
+	sfm_inst(
+	.clk(clk), .rst(rst), .start(start),
+	.read_start(SAMPLE_FRAME_OFF),
+	.read_end(SAMPLE_FRAME_OFF + SAMPLE_FRAME_LEN),
+	.readclk(sfm_readclk),
+	.ram_outclk(rom_outclk), .ram_out(rom_out),
+	.ram_readclk(rom_readclk), .ram_raddr(rom_raddr),
+	.outclk(btd_inclk), .out(btd_in), .done(btd_in_done));
+bytes_to_dibits_coord_buf btd_inst(
+	.clk(clk), .rst(rst),
+	.inclk(btd_inclk), .in(btd_in), .in_done(btd_in_done),
+	.downstream_rdy(1), .readclk(sfm_readclk),
+	.outclk(eth_parse_inclk), .out(eth_parse_in),
+	.done(eth_parse_in_done));
+eth_parser eth_parser_inst(
+	.clk(clk), .rst(rst),
+	.inclk(eth_parse_inclk), .in(eth_parse_in),
+	.in_done(eth_parse_in_done));
+
+initial begin
+	#100
+	rst = 0;
+	start = 1;
+	#20
+	start = 0;
+	#(SAMPLE_FRAME_LEN * 4 * 20)
+	#400
 	$stop();
 end
 
