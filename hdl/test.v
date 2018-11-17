@@ -150,21 +150,21 @@ reg [clog2(RAM_SIZE)-1:0] read_addr = 0;
 wire read_ready;
 wire [BYTE_LEN-1:0] read_out;
 packet_synth_rom_driver packet_synth_rom_driver_inst(
-	.clk(clk), .reset(reset), .read_req(read_req), .read_addr(read_addr),
-	.read_ready(read_ready), .read_out(read_out));
+	.clk(clk), .rst(reset), .readclk(read_req), .raddr(read_addr),
+	.outclk(read_ready), .out(read_out));
 reg done_in = 0;
 wire [1:0] dibit_out;
 wire byte_clk, done_out;
 wire btd_idle;
 bytes_to_dibits btd_inst(
-	.clk(clk), .reset(reset), .inclk(read_ready),
-	.in(read_out), .done_in(done_in),
-	.out(dibit_out), .outclk(byte_clk), .idle(btd_idle),
-	.done_out(done_out));
+	.clk(clk), .rst(reset), .inclk(read_ready),
+	.in(read_out), .in_done(done_in),
+	.out(dibit_out), .outclk(byte_clk), .rdy(btd_idle),
+	.done(done_out));
 wire [31:0] crc;
 crc32 crc32_inst(
-	.clk(clk), .reset(reset), .inclk(byte_clk),
-	.in(dibit_out), .out(crc));
+	.clk(clk), .rst(reset), .shift(0),
+	.inclk(byte_clk), .in(dibit_out), .out(crc));
 
 reg reading = 0;
 reg [clog2(BYTE_LEN)-2:0] dibit_cnt;
@@ -201,46 +201,70 @@ endmodule
 
 module test_packet_synth();
 
+`include "params.vh"
+`include "packet_synth_rom_layout.vh"
+
 reg clk_100mhz = 0;
 // 100MHz clock
 initial forever #5 clk_100mhz = ~clk_100mhz;
 
 wire clk;
 clk_wiz_0 clk_wiz_inst(
-	.reset(0),
+	.reset(1'b0),
 	.clk_in1(clk_100mhz),
 	.clk_out1(clk));
 
-reg reset = 1, start = 0;
-wire eth_txen;
-wire [1:0] eth_txd;
-packet_synth packet_synth_inst(
-	.clk(clk), .reset(reset), .start(start),
-	.data_ram_start_in(0), .data_ram_end_in(73),
-	.eth_txen(eth_txen), .eth_txd(eth_txd));
+localparam RAM_SIZE = PACKET_SYNTH_ROM_SIZE;
+reg rst = 1, start = 0;
+wire efg_inclk, efg_outclk, efg_done;
+wire [BYTE_LEN-1:0] efg_in;
+wire [1:0] efg_out;
+wire rom1_readclk, rom2_readclk, rom1_outclk, rom2_outclk;
+wire [clog2(RAM_SIZE)-1:0] rom1_raddr, rom2_raddr;
+wire [BYTE_LEN-1:0] rom1_out, rom2_out;
+packet_synth_rom_driver psr_driv_1(
+	.clk(clk), .rst(rst),
+	.readclk(rom1_readclk), .raddr(rom1_raddr),
+	.outclk(rom1_outclk), .out(rom1_out));
+packet_synth_rom_driver psr_driv_2(
+	.clk(clk), .rst(rst),
+	.readclk(rom2_readclk), .raddr(rom2_raddr),
+	.outclk(rom2_outclk), .out(rom2_out));
+wire sfm_readclk, sfm_done;
+stream_from_memory #(
+	.RAM_SIZE(RAM_SIZE), .RAM_READ_LATENCY(PACKET_SYNTH_ROM_LATENCY))
+	sfm_inst(
+	.clk(clk), .rst(rst), .start(start),
+	.read_start(SAMPLE_PAYLOAD_OFF),
+	.read_end(SAMPLE_PAYLOAD_OFF + SAMPLE_PAYLOAD_LEN),
+	.readclk(sfm_readclk),
+	.ram_outclk(rom1_outclk), .ram_out(rom1_out),
+	.ram_readclk(rom1_readclk), .ram_raddr(rom1_raddr),
+	.outclk(efg_inclk), .out(efg_in), .done(sfm_done));
+eth_frame_generator efg_inst(
+	.clk(clk), .rst(rst), .start(start), .in_done(sfm_done),
+	.inclk(efg_inclk), .in(efg_in),
+	.ram_outclk(rom2_outclk), .ram_out(rom2_out),
+	.ram_readclk(rom2_readclk), .ram_raddr(rom2_raddr),
+	.outclk(efg_outclk), .out(efg_out),
+	.upstream_readclk(sfm_readclk), .done(efg_done));
 
 initial begin
-	#2000
-	reset = 0;
-
-	// reset sequence
-	#400
-
+	#500
+	rst = 0;
 	start = 1;
 	#20
 	start = 0;
 
 	// bytes * dibits/byte * ns/dibit
-	#(73 * 4 * 20)
+	#(76 * 4 * 20)
 
-	#100
+	#400
 
 	$stop();
 end
 
 endmodule
-
-
 
 module test_aes_one_block_encrypt();
 
@@ -358,26 +382,6 @@ end
 
 endmodule
 
-module test_main();
-
-reg clk_100mhz = 0;
-// 100MHz clock
-initial forever #5 clk_100mhz = ~clk_100mhz;
-
-wire clk, clk_120mhz;
-clk_wiz_0 clk_wiz_inst(
-	.reset(0),
-	.clk_in1(clk_100mhz),
-	.clk_out1(clk),
-	.clk_out3(clk_120mhz));
-
-initial begin
-	#10000
-	$stop();
-end
-
-endmodule
-
 module test_bytes_to_colors();
 
 `include "params.vh"
@@ -400,12 +404,12 @@ assign btc_in = in_data_shifted[0+:BYTE_LEN];
 
 wire vram_readclk, vram_outclk, vram_we;
 wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
-wire [COLOR_LEN-1:0] vram_read_out, vram_write_val;
+wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
 	.clk(clk), .rst(reset),
 	.readclk(vram_readclk), .raddr(vram_raddr),
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
-	.outclk(vram_outclk), .read_out(vram_out));
+	.outclk(vram_outclk), .out(vram_out));
 stream_to_memory
 	#(.RAM_SIZE(VIDEO_CACHE_RAM_SIZE), .WORD_LEN(COLOR_LEN)) stm_inst(
 	.clk(clk), .rst(reset), .set_offset_req(0), .set_offset_val(0),
@@ -428,6 +432,26 @@ initial begin
 	btc_inclk = 1;
 	#(6 * 20)
 	#100
+	$stop();
+end
+
+endmodule
+
+module test_main();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk, clk_120mhz;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk),
+	.clk_out3(clk_120mhz));
+
+initial begin
+	#10000
 	$stop();
 end
 

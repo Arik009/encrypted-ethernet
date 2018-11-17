@@ -1,38 +1,49 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company:
-// Engineer:
-//
-// Create Date: 10/02/2015 02:05:19 AM; comments added 7/24/2018
-// Design Name:
-// Module Name: xvga
-// Project Name:
-// Target Devices:
-// Tool Versions:
-// Description:
-//
-// Revision:
-// Revision 1.0 - File Created
-// Additional Comments:
-//
-//////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// xvga: Generate XVGA display signals (1024 x 768 @ 60Hz)
-// vga: 640x480 verilog is also included by commented out
-//
-////////////////////////////////////////////////////////////////////////////////
-
 
 module xvga(
 	input vclock,
-	output reg [clog2(VGA_H_TOT):0] hcount,
-	output reg [clog2(VGA_V_TOT):0] vcount,
+	output reg [clog2(VGA_WIDTH)-1:0] hcount,
+	output reg [clog2(VGA_HEIGHT)-1:0] vcount,
 	output reg vsync, hsync,
+	// vga outputs account for polarity
+	output vga_vsync, vga_hsync,
 	output reg blank);
 
 `include "params.vh"
+
+localparam VGA_H_FRONT_PORCH = 56;
+localparam VGA_H_SYNC = 120;
+localparam VGA_H_BACK_PORCH = 64;
+localparam VGA_V_FRONT_PORCH = 37;
+localparam VGA_V_SYNC = 6;
+localparam VGA_V_BACK_PORCH = 23;
+localparam VGA_POLARITY = 0;
+
+// 1024x768
+// localparam VGA_H_FRONT_PORCH = 24;
+// localparam VGA_H_SYNC = 136;
+// localparam VGA_H_BACK_PORCH = 160;
+// localparam VGA_V_FRONT_PORCH = 9;
+// localparam VGA_V_SYNC = 6;
+// localparam VGA_V_BACK_PORCH = 23;
+// localparam VGA_POLARITY = 1;
+
+// 640x480
+// localparam VGA_H_FRONT_PORCH = 16;
+// localparam VGA_H_SYNC = 96;
+// localparam VGA_H_BACK_PORCH = 48;
+// localparam VGA_V_FRONT_PORCH = 10;
+// localparam VGA_V_SYNC = 2;
+// localparam VGA_V_BACK_PORCH = 33;
+// localparam VGA_POLARITY = 1;
+
+localparam VGA_H_TOT = VGA_WIDTH +
+	VGA_H_FRONT_PORCH + VGA_H_FRONT_PORCH + VGA_H_SYNC;
+localparam VGA_V_TOT = VGA_HEIGHT +
+	VGA_V_FRONT_PORCH + VGA_V_FRONT_PORCH + VGA_V_SYNC;
+
+assign vga_hsync = hsync ^ VGA_POLARITY;
+assign vga_vsync = vsync ^ VGA_POLARITY;
 
 // horizontal: 1344 pixels total
 // display 1024 pixels per line

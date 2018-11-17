@@ -81,23 +81,22 @@ endmodule
 module pulse_extender #(
 	// time to extend pulse by, default 0.1s
 	parameter EXTEND_LEN = 5000000) (
-	input clk, reset, in, output reg out = 0);
+	input clk, reset, in, output out);
 
 `include "util.vh"
 
-reg [clog2(EXTEND_LEN)-1:0] cnt = 0;
+reg [clog2(EXTEND_LEN+1)-1:0] cnt = 0;
+wire done;
+assign done = cnt == 0;
+assign out = in || !done;
 
 always @(posedge clk) begin
-	if (reset) begin
-		out <= 0;
+	if (reset)
 		cnt <= 0;
-	end else if (in) begin
-		out <= 1;
-		cnt <= 0;
-	end else if (cnt == EXTEND_LEN)
-		out <= 0;
-	else
-		cnt <= cnt + 1;
+	else if (in)
+		cnt <= EXTEND_LEN;
+	else if (!done)
+		cnt <= cnt - 1;
 end
 
 endmodule
@@ -143,17 +142,17 @@ endmodule
 
 module single_word_buffer #(
 	parameter DATA_WIDTH = 1) (
-	input clk, reset, clear, inclk, input [DATA_WIDTH-1:0] in,
+	input clk, rst, clear, inclk, input [DATA_WIDTH-1:0] in,
 	output reg empty = 1, output reg [DATA_WIDTH-1:0] out);
 
 always @(posedge clk) begin
-	if (reset)
+	if (rst)
 		empty <= 1;
 	else if (inclk) begin
-		empty <= 1;
+		empty <= 0;
 		out <= in;
 	end else if (clear)
-		empty <= 0;
+		empty <= 1;
 end
 
 endmodule

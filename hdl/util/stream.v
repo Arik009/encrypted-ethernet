@@ -5,8 +5,8 @@ module dibits_to_bytes(
 	input clk, reset, inclk,
 	input [1:0] in,
 	input done_in,
-	output reg [BYTE_LEN-1:0] out = 0,
 	output reg outclk = 0,
+	output reg [BYTE_LEN-1:0] out = 0,
 	output done_out);
 
 `include "params.vh"
@@ -50,15 +50,12 @@ endmodule
 module bytes_to_dibits(
 	// inclk is pulsed when a byte is presented on in
 	// outclk is pulsed when a dibit is presented on out
-	input clk, reset, inclk,
-	input [BYTE_LEN-1:0] in,
-	input done_in,
-	output [1:0] out,
-	output reg outclk = 0,
-	// idle is asserted when no byte is in queue
-	output idle,
+	input clk, rst, inclk, input [BYTE_LEN-1:0] in,
+	input in_done,
+	output reg outclk = 0, output [1:0] out,
+	output rdy,
 	// done_out is pulsed after done_in when buffer has been cleared
-	output done_out);
+	output done);
 
 `include "params.vh"
 
@@ -68,34 +65,33 @@ assign out = shifted[1:0];
 // only need half as much since we output 2 bits at a time
 reg [clog2(BYTE_LEN)-2:0] cnt = BYTE_LEN/2-1;
 assign idle = cnt == BYTE_LEN/2-1;
+assign rdy = idle;
 
-// done_in asserted, should assert done_out when buffer clears
-reg done_in_found = 0;
-assign done_out = done_in_found && idle;
+// in_done asserted, should assert done when buffer clears
+reg in_done_found = 0;
+assign done = in_done_found && idle;
 
 always @(posedge clk) begin
-	if (reset) begin
+	if (rst) begin
 		cnt <= BYTE_LEN/2-1;
 		outclk <= 0;
-		done_in_found <= 0;
-	end else if (inclk) begin
-		if (done_in)
-			done_in_found <= 1;
-		shifted <= in;
-		cnt <= 0;
-		outclk <= 1;
-	end else if (!idle) begin
-		if (done_in)
-			done_in_found <= 1;
-		outclk <= 1;
-		shifted <= {2'b00, shifted[2+:BYTE_LEN-2]};
-		cnt <= cnt + 1;
+		in_done_found <= 0;
 	end else begin
-		if (done_in)
-			done_in_found <= 1;
-		else if (done_in_found)
-			done_in_found <= 0;
-		outclk <= 0;
+		if (in_done)
+			in_done_found <= 1;
+		else if (in_done_found && !idle)
+			in_done_found <= 0;
+
+		if (inclk) begin
+			shifted <= in;
+			cnt <= 0;
+			outclk <= 1;
+		end else if (!idle) begin
+			outclk <= 1;
+			shifted <= {2'b00, shifted[2+:BYTE_LEN-2]};
+			cnt <= cnt + 1;
+		end else
+			outclk <= 0;
 	end
 end
 
@@ -142,16 +138,16 @@ endmodule
 
 // stream data out of memory, rate-limited by ready
 module stream_from_memory #(
-	parameter RAM_SIZE = PACKET_BUFFER_SIZE) (
+	parameter RAM_SIZE = PACKET_BUFFER_SIZE,
+	parameter RAM_READ_LATENCY = PACKET_BUFFER_READ_LATENCY) (
 	input clk, rst, start,
 	// as usual, read_end is one byte after the last byte
 	input [clog2(RAM_SIZE)-1:0] read_start, read_end,
-	// ready is asserted when the next read should be initiated
-	input downstream_rdy,
+	input readclk,
 	input ram_outclk, input [BYTE_LEN-1:0] ram_out,
 	output reg ram_readclk = 0,
 	output reg [clog2(RAM_SIZE)-1:0] ram_raddr,
-	output outclk, output [BYTE_LEN-1:0] out);
+	output outclk, output [BYTE_LEN-1:0] out, output done);
 
 `include "params.vh"
 
@@ -167,30 +163,36 @@ reg first_word = 0;
 wire idle;
 assign idle = !first_word && ram_raddr == read_end_buf;
 
-reg prev_downstream_rdy = 0;
+wire prev_readclk;
+delay readclk_delay(
+	.clk(clk), .reset(rst), .in(readclk), .out(prev_readclk));
+
+// delay done so it appears when data comes out of ram
+wire done_pd;
+assign done_pd = outclk && (ram_raddr + 1 == read_end_buf);
+delay #(.DELAY_LEN(RAM_READ_LATENCY)) done_delay(
+	.clk(clk), .reset(rst), .in(done_pd), .out(done));
 
 always @(posedge clk) begin
 	if (rst) begin
 		ram_readclk <= 0;
-		// stop stream even if downstream_rdy is asserted
+		// stop stream even if readclk is asserted
 		// (i.e. make idle = 1)
 		ram_raddr <= 0;
 		read_end_buf <= 0;
-		prev_downstream_rdy <= 0;
 		first_word <= 0;
 	end else begin
-		prev_downstream_rdy <= downstream_rdy;
 		if (start) begin
 			ram_raddr <= read_start;
 			read_end_buf <= read_end;
 			first_word <= 1;
-		end else if (!idle && prev_downstream_rdy) begin
+		end else if (!idle && prev_readclk) begin
 			// only advance read address on next clock cycle
 			// so that ram reads from current address
 			ram_raddr <= ram_raddr + 1;
 			first_word <= 0;
 		end
-		if ((start || !idle) && downstream_rdy)
+		if ((start || !idle) && readclk)
 			ram_readclk <= 1;
 		else
 			ram_readclk <= 0;
@@ -245,7 +247,7 @@ module stream_coord(
 	output readclk);
 
 reg waiting = 0;
-assign readclk = waiting ? 0 : downstream_rdy;
+assign readclk = !rst && (waiting ? 0 : downstream_rdy);
 
 always @(posedge clk) begin
 	if (rst)
@@ -255,5 +257,33 @@ always @(posedge clk) begin
 	else if (readclk)
 		waiting <= 1;
 end
+
+endmodule
+
+// buffered version of stream_coord, ensures that a word is passed
+// out immediately when downstream is ready
+module stream_coord_buf #(
+	parameter DATA_WIDTH = 1) (
+	input clk, rst,
+	input inclk, input [DATA_WIDTH-1:0] in,
+	input in_done,
+	input downstream_rdy,
+	output outclk, output [DATA_WIDTH-1:0] out,
+	output done,
+	output readclk);
+
+wire swb_empty;
+stream_coord sc_inst(
+	.clk(clk), .rst(rst),
+	// if downstream is ready, the buffer will be cleared,
+	// so the buffer is ready
+	.downstream_rdy(swb_empty || downstream_rdy),
+	.downstream_inclk(inclk),
+	.readclk(readclk));
+single_word_buffer #(.DATA_WIDTH(DATA_WIDTH+1)) swb_inst(
+	.clk(clk), .rst(rst), .clear(downstream_rdy),
+	.inclk(inclk), .in({in, in_done}),
+	.empty(swb_empty), .out({out, done}));
+assign outclk = !rst && !swb_empty && downstream_rdy;
 
 endmodule

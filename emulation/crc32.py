@@ -1,8 +1,14 @@
 # sample taken from StackOverflow:
 # https://stackoverflow.com/questions/40017293/check-fcs-ethernet-frame-crc-32-online-tools
 
-sample_frame_str = 'FFFFFFFFFFFF001234567890080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
-sample_frame = bytes.fromhex(sample_frame_str)
+mac_send = bytes.fromhex('DEADBEEFCAFE')
+mac_recv = bytes.fromhex('C0FFEEDAD101')
+ethertype = bytes.fromhex('0000')
+
+sample_payload_str = '080045000030B3FE0000801172BA0A0000030A00000204000400001C894D000102030405060708090A0B0C0D0E0F10111213'
+sample_payload = bytes.fromhex(sample_payload_str)
+
+sample_frame = mac_recv + mac_send + ethertype + sample_payload
 
 def reflect(x):
 	res = 0
@@ -18,7 +24,7 @@ def reflect_bytes(x):
 
 poly = reflect(0x04c11db7)
 init = reflect(0xffffffff)
-expected = 0xf9065ed2
+expected = 0x5e2fba05
 mask = 0xffffffff
 
 curr = init
