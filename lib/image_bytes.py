@@ -3,7 +3,7 @@ from PIL import Image
 def colors_to_bytes(arr):
 	res = []
 	for i in range(len(arr)//2):
-		col1, col2 = arr[i], arr[i+1]
+		col1, col2 = arr[i*2], arr[i*2+1]
 		res += [
 			col1 >> 4,
 			((col1 & 0xf) << 4) | (col2 >> 8),

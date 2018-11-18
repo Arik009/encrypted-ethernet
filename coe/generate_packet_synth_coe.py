@@ -7,8 +7,10 @@ import image_bytes
 fin_name = '../laptop-src/images/nyan.jpg'
 IMAGE_WIDTH = 32
 IMAGE_HEIGHT = 32
-sample_image_data = image_bytes.image_to_colors(
-		fin_name, IMAGE_WIDTH, IMAGE_HEIGHT)[:512]
+# use test data instead of a real image
+# sample_image_data = image_bytes.image_to_colors(
+# 		fin_name, IMAGE_WIDTH, IMAGE_HEIGHT)[:512]
+sample_image_data = list(range(512))
 # arbitrarily choose an offset of 6 for testing
 sample_payload = eth.gen_eth_fgp_payload(6*512, sample_image_data)
 sample_frame = eth.gen_eth_f2f(eth.ETHERTYPE_FGP, sample_payload)
