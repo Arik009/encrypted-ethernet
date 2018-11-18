@@ -216,9 +216,9 @@ clk_wiz_0 clk_wiz_inst(
 
 localparam RAM_SIZE = PACKET_SYNTH_ROM_SIZE;
 reg rst = 1, start = 0;
-wire eth_synth_inclk, eth_synth_outclk, eth_synth_done;
-wire [BYTE_LEN-1:0] eth_synth_in;
-wire [1:0] eth_synth_out;
+wire eth_tx_inclk, eth_tx_outclk, eth_tx_done;
+wire [BYTE_LEN-1:0] eth_tx_in;
+wire [1:0] eth_tx_out;
 wire rom1_readclk, rom2_readclk, rom1_outclk, rom2_outclk;
 wire [clog2(RAM_SIZE)-1:0] rom1_raddr, rom2_raddr;
 wire [BYTE_LEN-1:0] rom1_out, rom2_out;
@@ -242,20 +242,20 @@ stream_from_memory #(.RAM_SIZE(RAM_SIZE),
 	.ram_readclk(rom1_readclk), .ram_raddr(rom1_raddr),
 	.outclk(sfm_outclk), .out(sfm_out), .done(sfm_done));
 wire fgp_readclk, fgp_done;
-fgp_synth fgp_synth_inst(
+fgp_tx fgp_tx_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(sfm_done),
 	.inclk(sfm_outclk), .in(sfm_out),
 	// set an arbitrary offset for testing
 	.offset(8'hc), .readclk(fgp_readclk),
-	.outclk(eth_synth_inclk), .out(eth_synth_in),
+	.outclk(eth_tx_inclk), .out(eth_tx_in),
 	.upstream_readclk(sfm_readclk), .done(fgp_done));
-eth_synth eth_synth_inst(
+eth_tx eth_tx_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(fgp_done),
-	.inclk(eth_synth_inclk), .in(eth_synth_in),
+	.inclk(eth_tx_inclk), .in(eth_tx_in),
 	.ram_outclk(rom2_outclk), .ram_out(rom2_out),
 	.ram_readclk(rom2_readclk), .ram_raddr(rom2_raddr),
-	.outclk(eth_synth_outclk), .out(eth_synth_out),
-	.upstream_readclk(fgp_readclk), .done(eth_synth_done));
+	.outclk(eth_tx_outclk), .out(eth_tx_out),
+	.upstream_readclk(fgp_readclk), .done(eth_tx_done));
 
 initial begin
 	#500
@@ -495,7 +495,7 @@ bytes_to_dibits_coord_buf btd_inst(
 	.downstream_rdy(1), .readclk(sfm_readclk),
 	.outclk(eth_parse_inclk), .out(eth_parse_in),
 	.done(eth_parse_in_done));
-eth_parser eth_parser_inst(
+eth_rx eth_rx_inst(
 	.clk(clk), .rst(rst),
 	.inclk(eth_parse_inclk), .in(eth_parse_in),
 	.in_done(eth_parse_in_done),
@@ -504,7 +504,7 @@ eth_parser eth_parser_inst(
 	.err(eth_parse_err));
 wire eth_parse_downstream_rst;
 assign eth_parse_downstream_rst = rst || eth_parse_err;
-fgp_parser fgp_parser_inst(
+fgp_rx fgp_rx_inst(
 	.clk(clk), .rst(eth_parse_downstream_rst),
 	.inclk(eth_parse_outclk), .in(eth_parse_out),
 	.done(fgp_parse_done),

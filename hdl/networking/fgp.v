@@ -7,8 +7,8 @@
 // 768 bytes = 512 colors
 
 // produces outputs with a latency of LATENCY
-// essentially the same structure as eth_synth
-module fgp_synth #(
+// essentially the same structure as eth_tx
+module fgp_tx #(
 	parameter LATENCY = PACKET_SYNTH_ROM_LATENCY) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -73,7 +73,7 @@ end
 endmodule
 
 // parser drives ram directly for now, no error detection
-module fgp_parser(
+module fgp_rx(
 	input clk, rst, inclk,
 	input [BYTE_LEN-1:0] in,
 	output done,

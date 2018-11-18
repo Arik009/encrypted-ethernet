@@ -150,20 +150,24 @@ delay vga_vs_sync(
 
 ////// BRAM
 
+// the ram_rst signals allow us to clear any pending reads
+wire ram_rst;
 wire ram_readclk, ram_outclk, ram_we;
 wire [clog2(RAM_SIZE)-1:0] ram_raddr, ram_waddr;
 wire [BYTE_LEN-1:0] ram_out, ram_win;
 packet_buffer_ram_driver ram_driv_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(rst || ram_rst),
 	.readclk(ram_readclk), .raddr(ram_raddr),
 	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
 	.outclk(ram_outclk), .out(ram_out));
 
+wire vram_rst;
+assign vram_rst = 0;
 wire vram_readclk, vram_outclk, vram_we;
 wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
 wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(rst || vram_rst),
 	.readclk(vram_readclk), .raddr(vram_raddr),
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
 	.outclk(vram_outclk), .out(vram_out));
@@ -237,6 +241,7 @@ stream_to_memory uart_stm_inst(
 wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
 wire uart_txd;
+assign ram_rst = btnc;
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .rst(rst), .start(btnc),
 	.read_start(0), .read_end(RAM_SIZE),
@@ -245,8 +250,7 @@ stream_from_memory uart_sfm_inst(
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
 uart_tx_fast_stream_driver uart_tx_inst(
-	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
-	.start(btnc),
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(btnc),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.readclk(uart_tx_readclk));
 
@@ -254,7 +258,7 @@ uart_tx_fast_stream_driver uart_tx_inst(
 
 wire eth_parse_downstream_done, eth_parse_outclk, eth_parse_err;
 wire [BYTE_LEN-1:0] eth_parse_out;
-eth_parser eth_parser_inst(
+eth_rx eth_rx_inst(
 	.clk(clk), .rst(rst),
 	.inclk(rmii_outclk), .in(rmii_out),
 	.in_done(rmii_done),
@@ -266,7 +270,7 @@ wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_parse_setoff_val;
 wire [BYTE_LEN-1:0] fgp_parse_out;
 wire eth_parse_downstream_rst;
 assign eth_parse_downstream_rst = rst || eth_parse_err;
-fgp_parser fgp_parser_inst(
+fgp_rx fgp_rx_inst(
 	.clk(clk), .rst(eth_parse_downstream_rst),
 	.inclk(eth_parse_outclk), .in(eth_parse_out),
 	.done(eth_parse_downstream_done),

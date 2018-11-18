@@ -1,9 +1,9 @@
 // generate an ethernet frame on the level of bytes
 // CRC needs to be generated on the level of dibits,
-// which is handled in eth_synth
+// which is handled in eth_tx
 // expects payload and rom delay of PACKET_SYNTH_ROM_DELAY
 // exposes readclk to out latency of PACKET_SYNTH_ROM_DELAY
-module eth_body_synth #(
+module eth_body_tx #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -142,7 +142,7 @@ end
 endmodule
 
 // creates continuous dibit stream for an ethernet frame
-module eth_synth #(
+module eth_tx #(
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -157,23 +157,23 @@ module eth_synth #(
 
 // main processing ready for frame body
 wire main_rdy;
-wire eth_synth_readclk, eth_synth_outclk, eth_synth_done;
-wire [BYTE_LEN-1:0] eth_synth_out;
+wire eth_tx_readclk, eth_tx_outclk, eth_tx_done;
+wire [BYTE_LEN-1:0] eth_tx_out;
 wire btd_outclk, btd_done;
 wire [1:0] btd_out;
 wire crc_rst, crc_shift;
 wire [31:0] crc_out;
-eth_body_synth eth_synth_inst(
+eth_body_tx eth_tx_inst(
 	.clk(clk), .rst(rst), .start(start), .in_done(in_done),
-	.inclk(inclk), .in(in), .readclk(eth_synth_readclk),
+	.inclk(inclk), .in(in), .readclk(eth_tx_readclk),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
-	.outclk(eth_synth_outclk), .out(eth_synth_out),
-	.upstream_readclk(upstream_readclk), .done(eth_synth_done));
+	.outclk(eth_tx_outclk), .out(eth_tx_out),
+	.upstream_readclk(upstream_readclk), .done(eth_tx_done));
 bytes_to_dibits_coord_buf btd_inst(
 	.clk(clk), .rst(rst || start),
-	.inclk(eth_synth_outclk), .in(eth_synth_out), .in_done(eth_synth_done),
-	.downstream_rdy(main_rdy), .readclk(eth_synth_readclk),
+	.inclk(eth_tx_outclk), .in(eth_tx_out), .in_done(eth_tx_done),
+	.downstream_rdy(main_rdy), .readclk(eth_tx_readclk),
 	.outclk(btd_outclk), .out(btd_out), .done(btd_done));
 crc32 crc32_inst(
 	.clk(clk), .rst(crc_rst), .shift(crc_shift),
@@ -228,7 +228,7 @@ end
 
 endmodule
 
-module eth_parser(
+module eth_rx(
 	input clk, rst, inclk,
 	input [1:0] in, input in_done,
 	// downstream_done must be asserted on the same cycle as outclk
