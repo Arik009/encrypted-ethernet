@@ -1,8 +1,8 @@
 import sys
+from time import sleep
 sys.path.append('../lib/')
 import eth
 import image_bytes
-from time import sleep
 
 STOP_EARLY = True
 fin_name = 'images/nyan.jpg'

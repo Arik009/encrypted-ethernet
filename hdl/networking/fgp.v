@@ -99,7 +99,7 @@ assign outclk = inclk && state == STATE_DATA;
 assign out = in;
 
 always @(posedge clk) begin
-	if (rst) begin
+	if (rst || done) begin
 		state <= STATE_OFFSET;
 		cnt <= 0;
 	end else if (inclk) begin

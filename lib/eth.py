@@ -5,7 +5,7 @@ import crc32
 MAC_SEND = bytes.fromhex('DEADBEEFCAFE')
 MAC_RECV = bytes.fromhex('C0FFEEDAD101')
 
-ETHERTYPE_FGP = bytes.fromhex('0000')
+ETHERTYPE_FGP = bytes.fromhex('ca11')
 ETHERTYPE_IP = bytes.fromhex('0800')
 
 def gen_eth_body(dst, src, eth_type, payload):

@@ -77,7 +77,7 @@ initial forever #5 clk_100mhz = ~clk_100mhz;
 // clk will be 50MHz
 wire clk, clk_200mhz;
 clk_wiz_0 clk_wiz_inst(
-	.rst(0),
+	.reset(0),
 	.clk_in1(clk_100mhz), .clk_out1(clk), .clk_out2(clk_200mhz));
 
 wire [15:0] ddr2_dq;
@@ -449,6 +449,7 @@ endmodule
 module test_packet_parse();
 
 `include "params.vh"
+`include "networking.vh"
 `include "packet_synth_rom_layout.vh"
 
 reg clk = 0;
@@ -495,12 +496,16 @@ bytes_to_dibits_coord_buf btd_inst(
 	.downstream_rdy(1), .readclk(sfm_readclk),
 	.outclk(eth_parse_inclk), .out(eth_parse_in),
 	.done(eth_parse_in_done));
+wire eth_rx_ethertype_outclk;
+wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
 eth_rx eth_rx_inst(
 	.clk(clk), .rst(rst),
 	.inclk(eth_parse_inclk), .in(eth_parse_in),
 	.in_done(eth_parse_in_done),
 	.downstream_done(fgp_parse_done),
 	.outclk(eth_parse_outclk), .out(eth_parse_out),
+	.ethertype_outclk(eth_rx_ethertype_outclk),
+	.ethertype_out(eth_rx_ethertype_out),
 	.err(eth_parse_err));
 wire eth_parse_downstream_rst;
 assign eth_parse_downstream_rst = rst || eth_parse_err;
@@ -639,7 +644,7 @@ assign eth_ram_out = config_transmit ? ram_out : 0;
 
 wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
-reg uart_tx_start = 0;
+wire uart_tx_start;
 assign uart_rom_rst = uart_tx_start;
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .rst(rst), .start(uart_tx_start),
@@ -753,51 +758,71 @@ rmii_driver rmii_driv_inst(
 
 ////// ETHERNET RX => VRAM
 
-wire eth_parse_downstream_done, eth_parse_outclk, eth_parse_err;
-wire [BYTE_LEN-1:0] eth_parse_out;
+wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err;
+wire [BYTE_LEN-1:0] eth_rx_out;
+wire eth_rx_ethertype_outclk;
+wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
 eth_rx eth_rx_inst(
 	.clk(clk), .rst(rst),
 	.inclk(rmii_outclk), .in(rmii_out),
 	.in_done(rmii_done),
-	.downstream_done(eth_parse_downstream_done),
-	.outclk(eth_parse_outclk), .out(eth_parse_out),
-	.err(eth_parse_err));
-wire fgp_parse_setoff_req, fgp_parse_outclk;
-wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_parse_setoff_val;
-wire [BYTE_LEN-1:0] fgp_parse_out;
-wire eth_parse_downstream_rst;
-assign eth_parse_downstream_rst = rst || eth_parse_err;
+	.downstream_done(eth_rx_downstream_done),
+	.outclk(eth_rx_outclk), .out(eth_rx_out),
+	.ethertype_outclk(eth_rx_ethertype_outclk),
+	.ethertype_out(eth_rx_ethertype_out),
+	.err(eth_rx_err));
+wire eth_rx_downstream_rst;
+assign eth_rx_downstream_rst = rst || eth_rx_err;
+
+reg fgp_rx_en = 0;
+always @(posedge clk) begin
+	if (eth_rx_downstream_rst)
+		fgp_rx_en <= 0;
+	else if (eth_rx_ethertype_outclk)
+		fgp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FGP;
+end
+
+wire fgp_rx_inclk;
+assign fgp_rx_inclk = eth_rx_outclk && fgp_rx_en;
+
+wire fgp_rx_setoff_req, fgp_rx_outclk;
+wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
+wire [BYTE_LEN-1:0] fgp_rx_out;
 fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.inclk(eth_parse_outclk), .in(eth_parse_out),
-	.done(eth_parse_downstream_done),
-	.setoff_req(fgp_parse_setoff_req), .setoff_val(fgp_parse_setoff_val),
-	.outclk(fgp_parse_outclk), .out(fgp_parse_out));
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(fgp_rx_inclk), .in(eth_rx_out),
+	.done(eth_rx_downstream_done),
+	.setoff_req(fgp_rx_setoff_req), .setoff_val(fgp_rx_setoff_val),
+	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.inclk(fgp_parse_outclk), .in(fgp_parse_out),
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(fgp_rx_outclk), .in(fgp_rx_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.setoff_req(fgp_parse_setoff_req),
-	.setoff_val(fgp_parse_setoff_val[clog2(VRAM_SIZE)-1:0]),
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.setoff_req(fgp_rx_setoff_req),
+	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
 	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
+
+reg uart_tx_start_manual = 0;
+assign uart_tx_start = uart_tx_start_manual || eth_tx_done;
 
 initial begin
 	#2000
 	rst = 0;
 	#400
-	uart_tx_start = 1;
+	uart_tx_start_manual = 1;
 	#20
-	uart_tx_start = 0;
+	uart_tx_start_manual = 0;
 	// 12mbaud = 84ns per bit, for a frame of 914 bytes
 	// multiply by 2 to account for overhead
-	#(2 * 84 * 914 * 8)
+	// run for two cycles
+	#(2 * 2 * 84 * 914 * 8)
 	$stop();
 end
 

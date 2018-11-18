@@ -6,6 +6,8 @@ localparam ETH_GAP_LEN = 12;
 localparam ETH_MAC_LEN = 6;
 localparam ETH_ETHERTYPE_LEN = 2;
 
+localparam ETHERTYPE_FGP = 16'hca11;
+
 localparam FGP_OFFSET_LEN = 1;
 localparam FGP_PADDING_LEN = 127;
 localparam FGP_DATA_LEN = 768;

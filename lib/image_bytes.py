@@ -12,7 +12,7 @@ def colors_to_bytes(arr):
 	return bytes(res)
 
 def image_to_colors(fin_name, width, height):
-	im = Image.open(fin_name)
+	im = Image.open(fin_name).convert('RGB')
 	im = im.resize((width, height))
 	colors = []
 	for i in range(height):
@@ -22,6 +22,7 @@ def image_to_colors(fin_name, width, height):
 			g >>= 4
 			b >>= 4
 			colors += [(r << 8) | (g << 4) | b]
+	im.close()
 	return colors
 
 def image_to_bytestream(fin_name, width, height):

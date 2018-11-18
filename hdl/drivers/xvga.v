@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 
 module xvga(
-	input vclock,
-	output reg [clog2(VGA_WIDTH)-1:0] hcount,
-	output reg [clog2(VGA_HEIGHT)-1:0] vcount,
+	input clk,
+	output [clog2(VGA_WIDTH)-1:0] vga_x,
+	output [clog2(VGA_HEIGHT)-1:0] vga_y,
 	output reg vsync, hsync,
 	// vga outputs account for polarity
 	output vga_vsync, vga_hsync,
@@ -42,6 +42,11 @@ localparam VGA_H_TOT = VGA_WIDTH +
 localparam VGA_V_TOT = VGA_HEIGHT +
 	VGA_V_FRONT_PORCH + VGA_V_FRONT_PORCH + VGA_V_SYNC;
 
+reg [clog2(VGA_H_TOT)-1:0] hcount;
+reg [clog2(VGA_V_TOT)-1:0] vcount;
+assign vga_x = hcount[0+:clog2(VGA_HEIGHT)];
+assign vga_y = vcount[0+:clog2(VGA_WIDTH)];
+
 assign vga_hsync = hsync ^ VGA_POLARITY;
 assign vga_vsync = vsync ^ VGA_POLARITY;
 
@@ -67,7 +72,7 @@ assign vreset = hreset & (vcount == VGA_V_TOT-1);
 wire next_hblank,next_vblank;
 assign next_hblank = hreset ? 0 : hblankon ? 1 : hblank;
 assign next_vblank = vreset ? 0 : vblankon ? 1 : vblank;
-always @(posedge vclock) begin
+always @(posedge clk) begin
   hcount <= hreset ? 0 : hcount + 1;
   hblank <= next_hblank;
   hsync <= hsyncon ? 0 : hsyncoff ? 1 : hsync;  // active low

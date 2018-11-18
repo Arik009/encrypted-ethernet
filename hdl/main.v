@@ -1,5 +1,7 @@
 // SW[0]: reset
 // SW[1]: master configure: on for transmit, off for receive
+// 	additionally, if on, uart debug output will read from vram,
+// 	otherwise from packet buffer
 // BTNC: dump ram
 // BTNL: send sample packet
 module main(
@@ -127,20 +129,20 @@ wire [clog2(VGA_HEIGHT)-1:0] vga_y;
 wire vga_hsync, vga_vsync, vga_hsync_predelay, vga_vsync_predelay, blank;
 
 xvga xvga_inst(
-	.vclock(clk), .hcount(vga_x), .vcount(vga_y),
+	.clk(clk), .vga_x(vga_x), .vga_y(vga_y),
 	.vga_hsync(vga_hsync_predelay), .vga_vsync(vga_vsync_predelay),
 	.blank(blank));
 
-wire [3:0] vga_r_out, vga_g_out, vga_b_out;
+wire [COLOR_CHANNEL_LEN-1:0] vga_r_out, vga_g_out, vga_b_out;
 wire [COLOR_LEN-1:0] vga_col;
 assign {vga_r_out, vga_g_out, vga_b_out} = vga_col;
 
 // buffer all outputs
-delay #(.DATA_WIDTH(4)) vga_r_sync(
+delay #(.DATA_WIDTH(COLOR_CHANNEL_LEN)) vga_r_sync(
 	.clk(clk), .rst(rst), .in(vga_r_out), .out(VGA_R));
-delay #(.DATA_WIDTH(4)) vga_g_sync(
+delay #(.DATA_WIDTH(COLOR_CHANNEL_LEN)) vga_g_sync(
 	.clk(clk), .rst(rst), .in(vga_g_out), .out(VGA_G));
-delay #(.DATA_WIDTH(4)) vga_b_sync(
+delay #(.DATA_WIDTH(COLOR_CHANNEL_LEN)) vga_b_sync(
 	.clk(clk), .rst(rst), .in(vga_b_out), .out(VGA_B));
 delay vga_hs_sync(
 	.clk(clk), .rst(rst), .in(vga_hsync), .out(VGA_HS));
@@ -160,11 +162,12 @@ packet_buffer_ram_driver ram_driv_inst(
 	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
 	.outclk(ram_outclk), .out(ram_out));
 
+wire vram_rst;
 wire vram_readclk, vram_outclk, vram_we;
 wire [clog2(VRAM_SIZE)-1:0] vram_raddr, vram_waddr;
 wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .rst(rst),
+	.clk(clk), .rst(rst || vram_rst),
 	.readclk(vram_readclk), .raddr(vram_raddr),
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
 	.outclk(vram_outclk), .out(vram_out));
@@ -193,8 +196,24 @@ assign ram_readclk = config_transmit ? eth_ram_readclk : uart_ram_readclk;
 assign ram_raddr = config_transmit ? eth_ram_raddr : uart_ram_raddr;
 assign uart_ram_outclk = config_transmit ? 0 : ram_outclk;
 assign eth_ram_outclk = config_transmit ? ram_outclk : 0;
-assign uart_ram_out = config_transmit ? 0 : ram_out;
-assign eth_ram_out = config_transmit ? ram_out : 0;
+assign uart_ram_out = ram_out;
+assign eth_ram_out = ram_out;
+
+wire uart_vram_rst;
+wire vga_vram_readclk, vga_vram_outclk;
+wire [clog2(VRAM_SIZE)-1:0] vga_vram_raddr;
+wire [COLOR_LEN-1:0] vga_vram_out;
+wire uart_vram_readclk, uart_vram_outclk;
+wire [clog2(VRAM_SIZE)-1:0] uart_vram_raddr;
+wire [COLOR_LEN-1:0] uart_vram_out;
+assign vram_rst = config_transmit ? uart_vram_rst : 0;
+assign vram_readclk =
+	config_transmit ? uart_vram_readclk : vga_vram_readclk;
+assign vram_raddr = config_transmit ? uart_vram_raddr : vga_vram_raddr;
+assign vga_vram_outclk = config_transmit ? 0 : vram_outclk;
+assign uart_vram_outclk = config_transmit ? vram_outclk : 0;
+assign vga_vram_out = vram_out;
+assign uart_vram_out = vram_out;
 
 ////// RMII
 
@@ -305,52 +324,80 @@ eth_tx eth_tx_inst(
 
 wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
-assign uart_ram_rst = btnc;
+wire uart_tx_start;
+assign uart_tx_start = btnc;
+// if config_transmit is set, stream debug output from vram
+// otherwise, stream it from ram
+wire uart_sfm_ram_readclk;
+wire [clog2(RAM_SIZE)-1:0] uart_sfm_ram_raddr;
 stream_from_memory uart_sfm_inst(
-	.clk(clk), .rst(rst), .start(btnc),
-	.read_start(0), .read_end(RAM_SIZE),
+	.clk(clk), .rst(rst), .start(uart_tx_start),
+	.read_start(0), .read_end(config_transmit ? VRAM_SIZE : RAM_SIZE),
 	.readclk(uart_tx_readclk),
-	.ram_outclk(uart_ram_outclk), .ram_out(uart_ram_out),
-	.ram_readclk(uart_ram_readclk), .ram_raddr(uart_ram_raddr),
+	.ram_outclk(config_transmit ? uart_vram_outclk : uart_ram_outclk),
+	.ram_out(config_transmit ? uart_vram_out[BYTE_LEN-1:0] : uart_ram_out),
+	.ram_readclk(uart_sfm_ram_readclk), .ram_raddr(uart_sfm_ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
+assign uart_vram_readclk = uart_sfm_ram_readclk;
+assign uart_ram_readclk = uart_sfm_ram_readclk;
+assign uart_vram_raddr = uart_sfm_ram_raddr;
+assign uart_ram_raddr = uart_sfm_ram_raddr;
+assign uart_vram_rst = uart_tx_start;
+assign uart_ram_rst = uart_tx_start;
 uart_tx_fast_stream_driver uart_tx_inst(
-	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(btnc),
+	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(uart_tx_start),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.readclk(uart_tx_readclk));
 
 ////// ETHERNET RX => VRAM
 
-wire eth_parse_downstream_done, eth_parse_outclk, eth_parse_err;
-wire [BYTE_LEN-1:0] eth_parse_out;
+wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err;
+wire [BYTE_LEN-1:0] eth_rx_out;
+wire eth_rx_ethertype_outclk;
+wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
 eth_rx eth_rx_inst(
 	.clk(clk), .rst(rst),
 	.inclk(rmii_outclk), .in(rmii_out),
 	.in_done(rmii_done),
-	.downstream_done(eth_parse_downstream_done),
-	.outclk(eth_parse_outclk), .out(eth_parse_out),
-	.err(eth_parse_err));
-wire fgp_parse_setoff_req, fgp_parse_outclk;
-wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_parse_setoff_val;
-wire [BYTE_LEN-1:0] fgp_parse_out;
-wire eth_parse_downstream_rst;
-assign eth_parse_downstream_rst = rst || eth_parse_err;
+	.downstream_done(eth_rx_downstream_done),
+	.outclk(eth_rx_outclk), .out(eth_rx_out),
+	.ethertype_outclk(eth_rx_ethertype_outclk),
+	.ethertype_out(eth_rx_ethertype_out),
+	.err(eth_rx_err));
+wire eth_rx_downstream_rst;
+assign eth_rx_downstream_rst = rst || eth_rx_err;
+
+reg fgp_rx_en = 0;
+always @(posedge clk) begin
+	if (eth_rx_downstream_rst)
+		fgp_rx_en <= 0;
+	else if (eth_rx_ethertype_outclk)
+		fgp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FGP;
+end
+
+wire fgp_rx_inclk;
+assign fgp_rx_inclk = eth_rx_outclk && fgp_rx_en;
+
+wire fgp_rx_setoff_req, fgp_rx_outclk;
+wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
+wire [BYTE_LEN-1:0] fgp_rx_out;
 fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.inclk(eth_parse_outclk), .in(eth_parse_out),
-	.done(eth_parse_downstream_done),
-	.setoff_req(fgp_parse_setoff_req), .setoff_val(fgp_parse_setoff_val),
-	.outclk(fgp_parse_outclk), .out(fgp_parse_out));
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(fgp_rx_inclk), .in(eth_rx_out),
+	.done(eth_rx_downstream_done),
+	.setoff_req(fgp_rx_setoff_req), .setoff_val(fgp_rx_setoff_val),
+	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.inclk(fgp_parse_outclk), .in(fgp_parse_out),
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(fgp_rx_outclk), .in(fgp_rx_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(eth_parse_downstream_rst),
-	.setoff_req(fgp_parse_setoff_req),
-	.setoff_val(fgp_parse_setoff_val[clog2(VRAM_SIZE)-1:0]),
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.setoff_req(fgp_rx_setoff_req),
+	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
 	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
@@ -361,8 +408,8 @@ graphics_main graphics_main_inst(
 	.clk(clk), .rst(rst), .blank(blank),
 	.vga_x(vga_x), .vga_y(vga_y),
 	.vga_hsync_in(vga_hsync_predelay), .vga_vsync_in(vga_vsync_predelay),
-	.ram_read_ready(vram_outclk), .ram_read_val(vram_out),
-	.ram_read_req(vram_readclk), .ram_read_addr(vram_raddr),
+	.ram_outclk(vga_vram_outclk), .ram_out(vga_vram_out),
+	.ram_readclk(vga_vram_readclk), .ram_raddr(vga_vram_raddr),
 	.vga_col(vga_col),
 	.vga_hsync_out(vga_hsync), .vga_vsync_out(vga_vsync));
 

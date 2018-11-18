@@ -54,12 +54,10 @@ reg [2:0] cnt;
 assign upstream_readclk = state == STATE_PAYLOAD && readclk;
 assign ram_readclk = (
 	(state == STATE_MAC_DST) ||
-	(state == STATE_MAC_SRC)) &&
+	(state == STATE_MAC_SRC) ||
+	(state == STATE_ETHERTYPE)) &&
 	readclk;
-assign outclk_pd =
-	(state == STATE_ETHERTYPE) &&
-	readclk;
-// make EtherType 0x0000 for now
+assign outclk_pd = 0;
 assign out_pd = 0;
 
 always @(posedge clk) begin
@@ -70,36 +68,24 @@ always @(posedge clk) begin
 		ram_raddr <= MAC_RECV_OFF;
 		cnt <= 0;
 	end else if (readclk) begin
-		case (state)
-		STATE_MAC_DST:
-			if (cnt == ETH_MAC_LEN-1) begin
-				cnt <= 0;
-				state <= STATE_MAC_SRC;
-				ram_raddr <= MAC_SEND_OFF;
-			end else begin
-				cnt <= cnt + 1;
-				ram_raddr <= ram_raddr + 1;
-			end
-		STATE_MAC_SRC:
-			if (cnt == ETH_MAC_LEN-1) begin
-				cnt <= 0;
-				state <= STATE_ETHERTYPE;
-			end else begin
-				cnt <= cnt + 1;
-				ram_raddr <= ram_raddr + 1;
-			end
-		STATE_ETHERTYPE:
-			if (cnt == ETH_ETHERTYPE_LEN-1) begin
-				state <= STATE_PAYLOAD;
-			end else
-				cnt <= cnt + 1;
-		STATE_PAYLOAD:
-			if (in_done) begin
-				cnt <= 0;
-				state <= STATE_IDLE;
-			end else
-				cnt <= cnt + 1;
-		endcase
+		if (state == STATE_MAC_DST && cnt == ETH_MAC_LEN-1) begin
+			cnt <= 0;
+			state <= STATE_MAC_SRC;
+			ram_raddr <= MAC_SEND_OFF;
+		end else if (state == STATE_MAC_SRC && cnt == ETH_MAC_LEN-1) begin
+			cnt <= 0;
+			state <= STATE_ETHERTYPE;
+			ram_raddr <= ETHERTYPE_FGP_OFF;
+		end else if (state == STATE_ETHERTYPE &&
+				cnt == ETH_ETHERTYPE_LEN-1) begin
+			state <= STATE_PAYLOAD;
+		end else if (state == STATE_PAYLOAD && in_done) begin
+			cnt <= 0;
+			state <= STATE_IDLE;
+		end else begin
+			cnt <= cnt + 1;
+			ram_raddr <= ram_raddr + 1;
+		end
 	end
 end
 
@@ -235,6 +221,8 @@ module eth_rx(
 	// on the last byte of payload processing for correct error detection
 	input downstream_done,
 	output outclk, output [BYTE_LEN-1:0] out,
+	output ethertype_outclk,
+	output [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] ethertype_out,
 	output err);
 
 `include "params.vh"
@@ -261,6 +249,14 @@ assign err = (!idle && !inclk) ||
 
 assign out = dtb_out;
 assign outclk = state == STATE_PAYLOAD && dtb_outclk;
+wire ethertype_done;
+assign ethertype_done =
+	state == STATE_ETHERTYPE && cnt == ETH_ETHERTYPE_LEN-1;
+
+// shift in ethertype
+reg [(ETH_ETHERTYPE_LEN-1)*BYTE_LEN-1:0] ethertype_shifted;
+assign ethertype_outclk = dtb_outclk && ethertype_done;
+assign ethertype_out = {ethertype_shifted, dtb_out};
 
 always @(posedge clk) begin
 	if (rst || !inclk) begin
@@ -274,8 +270,7 @@ always @(posedge clk) begin
 		end else if (state == STATE_MAC_SRC && cnt == ETH_MAC_LEN-1) begin
 			state <= STATE_ETHERTYPE;
 			cnt <= 0;
-		end else if (state == STATE_ETHERTYPE
-				&& cnt == ETH_ETHERTYPE_LEN-1)
+		end else if (ethertype_done)
 			state <= STATE_PAYLOAD;
 		else if (state == STATE_PAYLOAD && downstream_done) begin
 			state <= STATE_CRC;
@@ -286,6 +281,8 @@ always @(posedge clk) begin
 		end else if (state != STATE_DONE) begin
 			idle <= 0;
 			cnt <= cnt + 1;
+			ethertype_shifted <=
+				ethertype_out[0+:(ETH_ETHERTYPE_LEN-1)*BYTE_LEN];
 		end
 	end
 end
