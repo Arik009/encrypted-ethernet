@@ -81,16 +81,16 @@ endmodule
 module uart_tx_fast_stream_driver(
 	input clk, clk_120mhz, rst, start,
 	input inclk, input [7:0] in,
-	output txd, output ready);
+	output txd, output readclk);
 
 wire driv_rdy;
 uart_tx_fast_driver uart_driv_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
-	.inclk(inclk), .in(in), .txd(txd), .ready(driv_rdy));
+	.inclk(inclk), .in(in), .txd(txd), .rdy(driv_rdy));
 stream_coord sc_inst(
 	.clk(clk), .rst(rst || start),
 	.downstream_rdy(driv_rdy), .downstream_inclk(inclk),
-	.readclk(ready));
+	.readclk(readclk));
 
 endmodule
 
@@ -102,8 +102,8 @@ module uart_tx_fast_driver #(
 	input clk, clk_120mhz, rst,
 	input inclk, input [7:0] in,
 	output txd,
-	// ready is asserted to request for a new byte to transmit
-	output ready);
+	// rdy is asserted to request for a new byte to transmit
+	output rdy);
 
 `include "params.vh"
 
@@ -142,7 +142,7 @@ delay tx_clk_delay(
 	.clk(clk_120mhz), .rst(rst_120mhz),
 	.in(tx_clk), .out(tx_clk_delayed));
 
-assign ready = !fifo_full;
+assign rdy = !fifo_full;
 
 always @(posedge clk_120mhz) begin
 	if (rst_120mhz) begin

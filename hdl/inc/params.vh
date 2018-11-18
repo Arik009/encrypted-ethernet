@@ -5,6 +5,7 @@ localparam SYNC_DELAY_LEN = 3;
 localparam BYTE_LEN = 8;
 localparam COLOR_CHANNEL_LEN = 4;
 localparam COLOR_LEN = COLOR_CHANNEL_LEN * 3;
+localparam BLOCK_LEN = 128;
 
 localparam PACKET_BUFFER_SIZE = 4096;
 // taken from ip summary

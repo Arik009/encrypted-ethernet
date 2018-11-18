@@ -219,6 +219,12 @@ wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst (
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
+wire uart_rx_active;
+// reset downstream modules if nothing is received for 1ms
+pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
+	.clk(clk), .rst(rst), .in(uart_rx_outclk), .out(uart_rx_active));
+wire uart_rx_downstream_rst;
+assign uart_rx_downstream_rst = rst || !uart_rx_active;
 stream_to_memory uart_stm_inst(
 	.clk(clk), .rst(rst),
 	.setoff_req(1'b0), .setoff_val(0),
@@ -228,13 +234,13 @@ stream_to_memory uart_stm_inst(
 
 ////// UART TX <= RAM
 
-wire uart_tx_inclk, uart_tx_ready;
+wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
 wire uart_txd;
 stream_from_memory uart_sfm_inst(
-	.clk(clk), .rst(rst), .start(uart_sfm_start),
+	.clk(clk), .rst(rst), .start(btnc),
 	.read_start(0), .read_end(RAM_SIZE),
-	.readclk(uart_tx_ready),
+	.readclk(uart_tx_readclk),
 	.ram_outclk(ram_outclk), .ram_out(ram_out),
 	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
@@ -242,7 +248,7 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.start(btnc),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
-	.ready(uart_tx_ready));
+	.readclk(uart_tx_readclk));
 
 ////// ETHERNET RX => VRAM
 
@@ -331,6 +337,8 @@ assign JB = {
 
 endmodule
 
+// this test module is just used to check the space usage of the
+// AES modules
 module main_test_aes(
 	input CLK100MHZ,
 	input [15:0] SW,
@@ -385,7 +393,8 @@ reg jb_out;
 assign JB[0] = jb_out;
 
 wire tx_clk;
-clock_divider #(.PULSE_PERIOD(128)) cd(.clk(clk), .start(0), .en(1), .out(block_clk));
+clock_divider #(.PULSE_PERIOD(128)) cd_inst(
+	.clk(clk), .start(0), .en(1), .out(block_clk));
 
 always @(posedge clk) begin
 	aes_in <= {aes_in[126:0], SW[0]};

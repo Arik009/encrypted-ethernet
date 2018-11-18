@@ -183,7 +183,6 @@ end
 endmodule
 
 // create a memory write stream
-// for testing purposes
 module stream_to_memory #(
 	parameter RAM_SIZE = PACKET_BUFFER_SIZE,
 	parameter WORD_LEN = BYTE_LEN) (
