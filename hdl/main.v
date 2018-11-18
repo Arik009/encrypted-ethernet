@@ -42,6 +42,7 @@ module main(
 
 localparam RAM_SIZE = PACKET_BUFFER_SIZE;
 localparam VRAM_SIZE = VIDEO_CACHE_RAM_SIZE;
+localparam ROM_SIZE = PACKET_SYNTH_ROM_SIZE;
 
 ////// CLOCKING
 
@@ -133,8 +134,6 @@ xvga xvga_inst(
 wire [3:0] vga_r_out, vga_g_out, vga_b_out;
 wire [COLOR_LEN-1:0] vga_col;
 assign {vga_r_out, vga_g_out, vga_b_out} = vga_col;
-assign vga_hs_out = vga_hsync;
-assign vga_vs_out = vga_vsync;
 
 // buffer all outputs
 delay #(.DATA_WIDTH(4)) vga_r_sync(
@@ -161,31 +160,41 @@ packet_buffer_ram_driver ram_driv_inst(
 	.we(ram_we), .waddr(ram_waddr), .win(ram_win),
 	.outclk(ram_outclk), .out(ram_out));
 
-wire vram_rst;
-assign vram_rst = 0;
 wire vram_readclk, vram_outclk, vram_we;
-wire [clog2(VIDEO_CACHE_RAM_SIZE)-1:0] vram_raddr, vram_waddr;
+wire [clog2(VRAM_SIZE)-1:0] vram_raddr, vram_waddr;
 wire [COLOR_LEN-1:0] vram_out, vram_win;
 video_cache_ram_driver vram_driv_inst(
-	.clk(clk), .rst(rst || vram_rst),
+	.clk(clk), .rst(rst),
 	.readclk(vram_readclk), .raddr(vram_raddr),
 	.we(vram_we), .waddr(vram_waddr), .win(vram_win),
 	.outclk(vram_outclk), .out(vram_out));
 
+wire rom_rst, rom_readclk, rom_outclk;
+wire [clog2(ROM_SIZE)-1:0] rom_raddr;
+wire [BYTE_LEN-1:0] rom_out;
+packet_synth_rom_driver psr_inst(
+	.clk(clk), .rst(rst || rom_rst),
+	.readclk(rom_readclk), .raddr(rom_raddr),
+	.outclk(rom_outclk), .out(rom_out));
+
 ////// RAM MULTIPLEXING
 
-wire uart_ram_we;
-wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr;
-wire [BYTE_LEN-1:0] uart_ram_win;
-wire eth_ram_we;
-wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr;
-wire [BYTE_LEN-1:0] eth_ram_win;
-assign ram_we =
-	config_transmit ? uart_ram_we : eth_ram_we;
-assign ram_waddr =
-	config_transmit ? uart_ram_waddr : eth_ram_waddr;
-assign ram_win =
-	config_transmit ? uart_ram_win : eth_ram_win;
+wire uart_ram_rst, uart_ram_we, uart_ram_readclk, uart_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr, uart_ram_raddr;
+wire [BYTE_LEN-1:0] uart_ram_win, uart_ram_out;
+wire eth_ram_rst, eth_ram_we, eth_ram_readclk, eth_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr, eth_ram_raddr;
+wire [BYTE_LEN-1:0] eth_ram_win, eth_ram_out;
+assign ram_rst = config_transmit ? uart_ram_rst : eth_ram_rst;
+assign ram_we = config_transmit ? uart_ram_we : eth_ram_we;
+assign ram_waddr = config_transmit ? uart_ram_waddr : eth_ram_waddr;
+assign ram_win = config_transmit ? uart_ram_win : eth_ram_win;
+assign ram_readclk = config_transmit ? eth_ram_readclk : uart_ram_readclk;
+assign ram_raddr = config_transmit ? eth_ram_raddr : uart_ram_raddr;
+assign uart_ram_outclk = config_transmit ? 0 : ram_outclk;
+assign eth_ram_outclk = config_transmit ? ram_outclk : 0;
+assign uart_ram_out = config_transmit ? 0 : ram_out;
+assign eth_ram_out = config_transmit ? ram_out : 0;
 
 ////// RMII
 
@@ -204,10 +213,6 @@ rmii_driver rmii_driv_inst(
 
 wire eth_txen;
 wire [1:0] eth_txd;
-// to be connected to eth_frame_generator
-assign eth_txen = 0;
-assign eth_txd = 2'b0;
-
 // buffer the outputs so that eth_txd calculation would be
 // under timing constraints
 delay eth_txen_delay(
@@ -229,25 +234,84 @@ pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
 	.clk(clk), .rst(rst), .in(uart_rx_outclk), .out(uart_rx_active));
 wire uart_rx_downstream_rst;
 assign uart_rx_downstream_rst = rst || !uart_rx_active;
-stream_to_memory uart_stm_inst(
-	.clk(clk), .rst(rst),
-	.setoff_req(1'b0), .setoff_val(0),
-	.inclk(uart_rx_outclk), .in(uart_rx_out),
-	.ram_we(uart_ram_we), .ram_waddr(uart_ram_waddr),
-	.ram_win(uart_ram_win));
+
+localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
+localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
+reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
+reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
+assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
+assign uart_ram_we = uart_rx_outclk;
+assign uart_ram_win = uart_rx_out;
+always @(posedge clk) begin
+	if (uart_rx_downstream_rst) begin
+		uart_rx_cnt <= 0;
+		pb_queue_head <= 0;
+		pb_queue_tail <= 0;
+	end else if (uart_rx_outclk) begin
+		if (uart_rx_cnt == FGP_LEN-1) begin
+			uart_rx_cnt <= 0;
+			// if queue overflows, drop the current packet
+			if (pb_queue_tail + 1 != pb_queue_head)
+				pb_queue_tail <= pb_queue_tail + 1;
+		end else
+			uart_rx_cnt <= uart_rx_cnt + 1;
+	end
+end
+
+////// ETHERNET TX <= RAM
+
+wire eth_tx_done;
+reg eth_tx_active = 0, eth_tx_start = 0;
+always @(posedge clk) begin
+	if (rst) begin
+		eth_tx_active <= 0;
+		eth_tx_start <= 0;
+	end else if (eth_tx_start) begin
+		eth_tx_start <= 0;
+		eth_tx_active <= 1;
+	end else if (eth_tx_active && eth_tx_done) begin
+		eth_tx_active <= 0;
+		pb_queue_head <= pb_queue_head + 1;
+	end else if (!eth_tx_active && pb_queue_head != pb_queue_tail)
+		eth_tx_start <= 1;
+end
+
+assign eth_ram_rst = eth_tx_start;
+wire [clog2(RAM_SIZE)-1:0] eth_tx_sfm_read_start;
+assign eth_tx_sfm_read_start = {pb_queue_head, {clog2(FGP_LEN){1'b0}}};
+wire eth_tx_sfm_readclk, eth_tx_sfm_outclk, eth_tx_sfm_done;
+wire [BYTE_LEN-1:0] eth_tx_sfm_out;
+stream_from_memory #(.RAM_SIZE(RAM_SIZE),
+	.RAM_READ_LATENCY(PACKET_BUFFER_READ_LATENCY)) eth_tx_sfm_inst(
+	.clk(clk), .rst(rst), .start(eth_tx_start),
+	.read_start(eth_tx_sfm_read_start),
+	.read_end(eth_tx_sfm_read_start + FGP_LEN),
+	.readclk(eth_tx_sfm_readclk),
+	.ram_outclk(eth_ram_outclk), .ram_out(eth_ram_out),
+	.ram_readclk(eth_ram_readclk), .ram_raddr(eth_ram_raddr),
+	.outclk(eth_tx_sfm_outclk), .out(eth_tx_sfm_out),
+	.done(eth_tx_sfm_done));
+assign rom_rst = eth_tx_start;
+eth_tx eth_tx_inst(
+	.clk(clk), .rst(rst), .start(eth_tx_start),
+	.in_done(eth_tx_sfm_done),
+	.inclk(eth_tx_sfm_outclk), .in(eth_tx_sfm_out),
+	.ram_outclk(rom_outclk), .ram_out(rom_out),
+	.ram_readclk(rom_readclk), .ram_raddr(rom_raddr),
+	.outclk(eth_txen), .out(eth_txd),
+	.upstream_readclk(eth_tx_sfm_readclk), .done(eth_tx_done));
 
 ////// UART TX <= RAM
 
 wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
-wire uart_txd;
-assign ram_rst = btnc;
+assign uart_ram_rst = btnc;
 stream_from_memory uart_sfm_inst(
 	.clk(clk), .rst(rst), .start(btnc),
 	.read_start(0), .read_end(RAM_SIZE),
 	.readclk(uart_tx_readclk),
-	.ram_outclk(ram_outclk), .ram_out(ram_out),
-	.ram_readclk(ram_readclk), .ram_raddr(ram_raddr),
+	.ram_outclk(uart_ram_outclk), .ram_out(uart_ram_out),
+	.ram_readclk(uart_ram_readclk), .ram_raddr(uart_ram_raddr),
 	.outclk(uart_tx_inclk), .out(uart_tx_in));
 uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(btnc),

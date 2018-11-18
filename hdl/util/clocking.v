@@ -5,7 +5,7 @@ module reset_stream_fifo(
 wire fifo_empty, fifo_out;
 wire fifo_rden, fifo_prev_rden;
 bit_stream_fifo reset_fifo(
-	.rst(0),
+	.rst(1'b0),
 	.wr_clk(clka), .rd_clk(clkb),
 	.din(rsta), .wr_en(rsta),
 	.rd_en(fifo_rden), .dout(fifo_out),
