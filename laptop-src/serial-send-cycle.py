@@ -29,8 +29,6 @@ def send_cycle(ser):
 				ser.flush()
 				print("%d bytes written" % num_written)
 				sleep(0.01)
-			cnt = cnt + 1
-
-send_cycle(None)
+		cnt = cnt + 1
 
 fpga_serial.do_serial(send_cycle)

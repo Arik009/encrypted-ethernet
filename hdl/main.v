@@ -258,20 +258,23 @@ localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
 localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
+wire [clog2(PB_QUEUE_LEN)-1:0] pb_queue_tail_next;
+assign pb_queue_tail_next = pb_queue_tail + 1;
 assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
 assign uart_ram_we = uart_rx_outclk;
 assign uart_ram_win = uart_rx_out;
 always @(posedge clk) begin
-	if (uart_rx_downstream_rst) begin
+	if (rst) begin
 		uart_rx_cnt <= 0;
-		pb_queue_head <= 0;
 		pb_queue_tail <= 0;
+	end else if (!uart_rx_active) begin
+		uart_rx_cnt <= 0;
 	end else if (uart_rx_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin
 			uart_rx_cnt <= 0;
 			// if queue overflows, drop the current packet
-			if (pb_queue_tail + 1 != pb_queue_head)
-				pb_queue_tail <= pb_queue_tail + 1;
+			if (pb_queue_tail_next != pb_queue_head)
+				pb_queue_tail <= pb_queue_tail_next;
 		end else
 			uart_rx_cnt <= uart_rx_cnt + 1;
 	end
@@ -285,6 +288,7 @@ always @(posedge clk) begin
 	if (rst) begin
 		eth_tx_active <= 0;
 		eth_tx_start <= 0;
+		pb_queue_head <= 0;
 	end else if (eth_tx_start) begin
 		eth_tx_start <= 0;
 		eth_tx_active <= 1;
@@ -443,7 +447,10 @@ assign LED = {
 };
 
 assign hex_display_data = {
-	4'h0, ram_waddr, 4'h0, ram_raddr
+	2'b0, pb_queue_head[1:0],
+	ram_waddr,
+	2'b0, pb_queue_tail[1:0],
+	ram_raddr
 };
 
 assign JB = {
