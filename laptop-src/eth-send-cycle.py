@@ -5,7 +5,7 @@ sys.path.append('../lib/')
 import eth
 import image_bytes
 
-STOP_EARLY = True
+STOP_EARLY = False
 image_dir = 'images/nyan/'
 IMAGE_WIDTH = 32
 IMAGE_HEIGHT = 32
