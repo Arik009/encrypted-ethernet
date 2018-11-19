@@ -89,8 +89,8 @@ wire [0:0] ddr2_ck_p, ddr2_ck_n, ddr2_cke, ddr2_cs_n;
 wire [1:0] ddr2_dm;
 wire [0:0] ddr2_odt;
 reg [26:0] app_addr = 0;
-reg [2:0] app_cmd = 3'b111;
-reg app_en = 0;
+wire [2:0] app_cmd;
+wire app_en;
 reg [63:0] app_wdf_data = 0;
 reg app_wdf_end = 0;
 reg [7:0] app_wdf_mask = 0;
@@ -108,7 +108,7 @@ ddr2_mcp ddr2_mcp_inst(
 	.dm_rdqs(ddr2_dm), .ba(ddr2_ba), .addr(ddr2_addr),
 	.dq(ddr2_dq), .dqs(ddr2_dqs_p), .dqs_n(ddr2_dqs_n),
 	.odt(ddr2_odt));
-nexys4_ddr2 ddr2_ram_inst(
+nexys4_ddr2 #(.SIM_BYPASS_INIT_CAL("FAST")) ddr2_ram_inst(
 	.ddr2_dq(ddr2_dq), .ddr2_dqs_n(ddr2_dqs_n), .ddr2_dqs_p(ddr2_dqs_p),
 	.ddr2_addr(ddr2_addr), .ddr2_ba(ddr2_ba),
 	.ddr2_ras_n(ddr2_ras_n), .ddr2_cas_n(ddr2_cas_n), .ddr2_we_n(ddr2_we_n),
@@ -125,10 +125,23 @@ nexys4_ddr2 ddr2_ram_inst(
 	.ui_clk(ui_clk), .ui_clk_sync_rst(ui_clk_sync_rst),
 	.init_calib_complete(init_calib_complete));
 
+reg ui_en = 0;
+wire reading;
+assign reading = ui_en && app_addr != 5 && app_rdy;
+assign app_cmd = reading ? 3'b001 : 3'b111;
+assign app_en = reading;
+always @(posedge ui_clk) begin
+	if (init_calib_complete && app_rdy)
+		ui_en <= 1;
+	if (reading) begin
+		app_addr <= app_addr + 1;
+	end
+end
+
 initial begin
 	#400
 	sys_rst = 1;
-	#1000000
+	#500
 	$stop();
 end
 
