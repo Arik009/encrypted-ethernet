@@ -116,3 +116,19 @@ always @(posedge clk) begin
 end
 
 endmodule
+
+// encrypted fgp, just reads the number of bytes in an fgp frame
+module efgp_rx(
+	input clk, rst, inclk,
+	input [BYTE_LEN-1:0] in,
+	output done, outclk, output [BYTE_LEN-1:0] out);
+
+`include "params.vh"
+`include "networking.vh"
+
+read_n_words #(.NUM_WORDS(FGP_LEN), .WORD_LEN(BYTE_LEN)) read_inst(
+	.clk(clk), .rst(rst),
+	.inclk(inclk), .in(in),
+	.done(done), .outclk(outclk), .out(out));
+
+endmodule

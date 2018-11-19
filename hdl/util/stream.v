@@ -1,88 +1,130 @@
-// convert a dibit stream to a bytestream
+// convert a stream of words of size S_LEN to a stream of words
+// of size L_LEN, where S_LEN and L_LEN are powers of 2
 // no latency between in and out
-module dibits_to_bytes(
-	// inclk is pulsed when a dibit is presented on in
-	// outclk is pulsed when a byte is presented on out
-	input clk, rst, inclk,
-	input [1:0] in,
-	input in_done,
-	output outclk,
-	output [BYTE_LEN-1:0] out,
-	output done);
+module stream_pack #(
+	parameter S_LEN = 1,
+	parameter L_LEN = 2) (
+	input clk, rst, inclk, input [S_LEN-1:0] in, input in_done,
+	output outclk, output [L_LEN-1:0] out, output done);
 
-`include "params.vh"
+`include "util.vh"
 
-// scratch space to shift dibits in
-reg [BYTE_LEN-3:0] shifted;
-// only need half as much since we get 2 bits at a time
-reg [clog2(BYTE_LEN)-2:0] cnt = 0;
+localparam PACK_RATIO = L_LEN/S_LEN;
+
+// don't need to store last small word
+reg [L_LEN-S_LEN-1:0] shifted;
+reg [clog2(PACK_RATIO)-1:0] cnt = 0;
 
 assign out = {in, shifted};
-assign outclk = inclk && cnt == BYTE_LEN/2-1;
+assign outclk = inclk && cnt == PACK_RATIO-1;
 assign done = in_done;
 
 always @(posedge clk) begin
-	if (rst || in_done) begin
-		cnt <= 0;
-	end else if (outclk)
+	if (rst || in_done)
 		cnt <= 0;
 	else if (inclk) begin
-		shifted <= {in, shifted[2+:BYTE_LEN-4]};
+		shifted <= {in, shifted[S_LEN+:L_LEN-2*S_LEN]};
 		cnt <= cnt + 1;
 	end
 end
 
 endmodule
 
-// convert a bytestream to a dibit stream
-// assumes that bytes are inserted no faster than once every 4 clock cycles
-module bytes_to_dibits(
-	// inclk is pulsed when a byte is presented on in
-	// outclk is pulsed when a dibit is presented on out
-	input clk, rst, inclk, input [BYTE_LEN-1:0] in,
-	input in_done,
-	output reg outclk = 0, output [1:0] out,
-	output rdy,
+// convert a stream of words of size L_LEN to a stream of words
+// of size S_LEN, where S_LEN and L_LEN should be powers of 2
+// no latency between in and out
+// assumes that words are inserted no faster than once every
+// PACK_RATIO clock cycles
+module stream_unpack #(
+	parameter S_LEN = 1,
+	parameter L_LEN = 2) (
+	input clk, rst, inclk, input [L_LEN-1:0] in, input in_done,
+	output outclk, output [S_LEN:0] out,
 	// done is pulsed after done_in when buffer has been cleared
-	output done);
+	output rdy, done);
 
-`include "params.vh"
+`include "util.vh"
 
-// scratch space to shift dibits out
-reg [BYTE_LEN-1:0] shifted;
-assign out = shifted[1:0];
-// only need half as much since we output 2 bits at a time
-reg [clog2(BYTE_LEN)-2:0] cnt = BYTE_LEN/2-1;
-assign idle = cnt == BYTE_LEN/2-1;
+localparam PACK_RATIO = L_LEN/S_LEN;
+
+reg [L_LEN-S_LEN-1:0] shifted;
+assign out = inclk ? in[0+:S_LEN] : shifted[0+:S_LEN];
+reg [clog2(PACK_RATIO)-1:0] cnt = 0;
+wire idle;
+assign idle = cnt == 0;
 assign rdy = idle;
+assign outclk = !idle || inclk;
 
 // in_done asserted, should assert done when buffer clears
 reg in_done_found = 0;
-assign done = in_done_found && idle;
+assign done = in_done_found && cnt == PACK_RATIO-1;
 
 always @(posedge clk) begin
 	if (rst) begin
-		cnt <= BYTE_LEN/2-1;
-		outclk <= 0;
+		cnt <= 0;
 		in_done_found <= 0;
 	end else begin
 		if (inclk && in_done)
 			in_done_found <= 1;
-		else if (done)
-			in_done_found <= 0;
-
-		if (inclk) begin
-			shifted <= in;
-			cnt <= 0;
-			outclk <= 1;
-		end else if (!idle) begin
-			outclk <= 1;
-			shifted <= {2'b00, shifted[2+:BYTE_LEN-2]};
+		if (outclk) begin
 			cnt <= cnt + 1;
-		end else
-			outclk <= 0;
+			if (inclk)
+				shifted <= in[S_LEN+:L_LEN-S_LEN];
+			else
+				shifted <= {{S_LEN{1'b0}}, shifted[S_LEN+:L_LEN-2*S_LEN]};
+		end
 	end
 end
+
+endmodule
+
+// convert a dibit stream to a bytestream
+module dibits_to_bytes(
+	input clk, rst, inclk, input [1:0] in, input in_done,
+	output outclk, output [BYTE_LEN-1:0] out, output done);
+
+`include "params.vh"
+
+stream_pack #(.S_LEN(2), .L_LEN(BYTE_LEN)) pack_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(outclk), .out(out), .done(done));
+
+endmodule
+
+// convert a bytestream to a dibit stream
+module bytes_to_dibits(
+	input clk, rst, inclk, input [BYTE_LEN-1:0] in, input in_done,
+	output outclk, output [1:0] out, output rdy, done);
+
+`include "params.vh"
+
+stream_unpack #(.S_LEN(2), .L_LEN(BYTE_LEN)) unpack_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(outclk), .out(out), .rdy(rdy), .done(done));
+
+endmodule
+
+module bytes_to_blocks(
+	input clk, rst, inclk, input [BYTE_LEN-1:0] in, input in_done,
+	output outclk, output [BLOCK_LEN-1:0] out, output done);
+
+`include "params.vh"
+
+stream_pack #(.S_LEN(BYTE_LEN), .L_LEN(BLOCK_LEN)) pack_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(outclk), .out(out), .done(done));
+
+endmodule
+
+module blocks_to_bytes(
+	input clk, rst, inclk, input [BLOCK_LEN-1:0] in, input in_done,
+	output outclk, output [BYTE_LEN-1:0] out, output rdy, done);
+
+`include "params.vh"
+
+stream_unpack #(.S_LEN(BYTE_LEN), .L_LEN(BLOCK_LEN)) unpack_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(outclk), .out(out), .rdy(rdy), .done(done));
 
 endmodule
 
@@ -292,5 +334,29 @@ bytes_to_dibits btd_inst(
 	.inclk(btd_inclk), .in(btd_in), .in_done(btd_in_done),
 	.outclk(outclk), .out(out),
 	.rdy(btd_rdy), .done(done));
+
+endmodule
+
+// passes a number of words through, asserting done when done
+module read_n_words #(
+	parameter NUM_WORDS = 1,
+	parameter WORD_LEN = 1) (
+	input clk, rst, inclk,
+	input [WORD_LEN-1:0] in,
+	output done, outclk, output [WORD_LEN-1:0] out);
+
+`include "params.vh"
+
+reg [clog2(NUM_WORDS)-1:0] cnt;
+assign outclk = inclk;
+assign out = in;
+assign done = inclk && cnt == NUM_WORDS-1;
+
+always @(posedge clk) begin
+	if (rst || done)
+		cnt <= 0;
+	else if (inclk)
+		cnt <= cnt + 1;
+end
 
 endmodule

@@ -186,7 +186,7 @@ assign out =
 	(state == STATE_PREAMBLE) ? 2'b01 :
 	crc_out[0+:2];
 assign crc_rst = rst || sfd;
-assign main_rdy = sfd || (state == STATE_BODY);
+assign main_rdy = state == STATE_BODY;
 assign done = gap_done;
 assign outclk = btd_outclk ||
 	(state == STATE_PREAMBLE) ||
