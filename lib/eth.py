@@ -29,7 +29,7 @@ def gen_eth_f2f(eth_type, payload):
 
 def gen_eth_fgp_payload(offset, colors):
 	assert(len(colors) == 512)
-	return (bytes([offset//512] + [0]*127) +
+	return (bytes([offset//512]) +
 		image_bytes.colors_to_bytes(colors))
 
 def gen_eth_fgp(offset, colors):

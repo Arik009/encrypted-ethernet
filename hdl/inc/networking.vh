@@ -9,7 +9,6 @@ localparam ETH_ETHERTYPE_LEN = 2;
 localparam ETHERTYPE_FGP = 16'hca11;
 
 localparam FGP_OFFSET_LEN = 1;
-localparam FGP_PADDING_LEN = 127;
 localparam FGP_DATA_LEN = 768;
 localparam FGP_DATA_LEN_COLORS = FGP_DATA_LEN * BYTE_LEN / COLOR_LEN;
-localparam FGP_LEN = FGP_OFFSET_LEN + FGP_PADDING_LEN + FGP_DATA_LEN;
+localparam FGP_LEN = FGP_OFFSET_LEN + FGP_DATA_LEN;

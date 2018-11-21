@@ -38,16 +38,14 @@ delay #(.DELAY_LEN(LATENCY),
 assign done = in_done;
 
 localparam STATE_OFFSET = 0;
-localparam STATE_PADDING = 1;
-localparam STATE_DATA = 2;
+localparam STATE_DATA = 1;
 
-reg [1:0] state = STATE_OFFSET;
+reg [0:0] state = STATE_OFFSET;
 reg [9:0] cnt = 0;
 
 assign upstream_readclk = (state == STATE_DATA) && readclk;
 assign outclk_pd =
-	(state == STATE_OFFSET ||
-	state == STATE_PADDING) &&
+	(state == STATE_OFFSET) &&
 	readclk;
 // if we're not in offset, then we're in padding
 assign out_pd =
@@ -60,11 +58,8 @@ always @(posedge clk) begin
 		cnt <= 0;
 	end else if (readclk) begin
 		if (state == STATE_OFFSET && cnt == FGP_OFFSET_LEN-1) begin
-			state <= STATE_PADDING;
-			cnt <= 0;
-		end else if (state == STATE_PADDING &&
-				cnt == FGP_PADDING_LEN-1) begin
 			state <= STATE_DATA;
+			cnt <= 0;
 		end else
 			cnt <= cnt + 1;
 	end
@@ -77,24 +72,23 @@ module fgp_rx(
 	input clk, rst, inclk,
 	input [BYTE_LEN-1:0] in,
 	output done,
-	output setoff_req,
-	output [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] setoff_val,
+	output offset_outclk,
+	output [BYTE_LEN-1:0] offset_out,
 	output outclk, output [BYTE_LEN-1:0] out);
 
 `include "params.vh"
 `include "networking.vh"
 
 localparam STATE_OFFSET = 0;
-localparam STATE_PADDING = 1;
-localparam STATE_DATA = 2;
+localparam STATE_DATA = 1;
 
-reg [1:0] state = STATE_OFFSET;
+reg [0:0] state = STATE_OFFSET;
 reg [9:0] cnt = 0;
 
 assign done = inclk && state == STATE_DATA && cnt == FGP_DATA_LEN-1;
-assign setoff_req = inclk && state == STATE_OFFSET &&
+assign offset_outclk = inclk && state == STATE_OFFSET &&
 	cnt == FGP_OFFSET_LEN-1;
-assign setoff_val = {in, {clog2(FGP_DATA_LEN_COLORS){1'b0}}};
+assign offset_out = in;
 assign outclk = inclk && state == STATE_DATA;
 assign out = in;
 
@@ -104,31 +98,11 @@ always @(posedge clk) begin
 		cnt <= 0;
 	end else if (inclk) begin
 		if (state == STATE_OFFSET && cnt == FGP_OFFSET_LEN-1) begin
-			state <= STATE_PADDING;
-			cnt <= 0;
-		end else if (state == STATE_PADDING &&
-				cnt == FGP_PADDING_LEN-1) begin
 			state <= STATE_DATA;
 			cnt <= 0;
 		end else
 			cnt <= cnt + 1;
 	end
 end
-
-endmodule
-
-// encrypted fgp, just reads the number of bytes in an fgp frame
-module efgp_rx(
-	input clk, rst, inclk,
-	input [BYTE_LEN-1:0] in,
-	output done, outclk, output [BYTE_LEN-1:0] out);
-
-`include "params.vh"
-`include "networking.vh"
-
-read_n_words #(.NUM_WORDS(FGP_LEN), .WORD_LEN(BYTE_LEN)) read_inst(
-	.clk(clk), .rst(rst),
-	.inclk(inclk), .in(in),
-	.done(done), .outclk(outclk), .out(out));
 
 endmodule

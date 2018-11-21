@@ -689,26 +689,44 @@ pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
 wire uart_rx_downstream_rst;
 assign uart_rx_downstream_rst = rst || !uart_rx_active;
 
+wire uart_rx_fgp_offset_outclk;
+wire [BYTE_LEN-1:0] uart_rx_fgp_offset_out;
+wire uart_rx_fgp_outclk;
+wire [BYTE_LEN-1:0] uart_rx_fgp_out;
+// use an fgp_rx to split the data from the offset
+fgp_rx encr_fgp_rx(
+	.clk(clk), .rst(uart_rx_downstream_rst),
+	.inclk(uart_rx_outclk), .in(uart_rx_out),
+	.offset_outclk(uart_rx_fgp_offset_outclk),
+	.offset_out(uart_rx_fgp_offset_out),
+	.outclk(uart_rx_fgp_outclk), .out(uart_rx_fgp_out));
+
 wire encr_outclk;
 wire [BYTE_LEN-1:0] encr_out;
 aes_encrypt_bytes encr_inst(
 	.clk(clk), .rst(uart_rx_downstream_rst),
-	.inclk(uart_rx_outclk), .in(uart_rx_out), .key(KEY),
+	.inclk(uart_rx_fgp_outclk), .in(uart_rx_fgp_out), .key(KEY),
 	.outclk(encr_outclk), .out(encr_out));
+
+wire encr_fgp_outclk;
+assign encr_fgp_outclk = uart_rx_fgp_offset_outclk || encr_outclk;
+wire [BYTE_LEN-1:0] encr_fgp_out;
+assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
+	uart_rx_fgp_offset_out : encr_out;
 
 localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
 localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
 assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
-assign uart_ram_we = encr_outclk;
-assign uart_ram_win = encr_out;
+assign uart_ram_we = encr_fgp_outclk;
+assign uart_ram_win = encr_fgp_out;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst) begin
 		uart_rx_cnt <= 0;
 		pb_queue_head <= 0;
 		pb_queue_tail <= 0;
-	end else if (encr_outclk) begin
+	end else if (encr_fgp_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin
 			uart_rx_cnt <= 0;
 			// if queue overflows, drop the current packet
@@ -804,36 +822,31 @@ always @(posedge clk) begin
 		fgp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FGP;
 end
 
-wire efgp_rx_outclk;
-wire [BYTE_LEN-1:0] efgp_rx_out;
-efgp_rx efgp_rx_inst(
+wire fgp_rx_setoff_req;
+wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
+wire fgp_rx_outclk;
+wire [BYTE_LEN-1:0] fgp_rx_out, fgp_rx_offset_out;
+fgp_rx fgp_rx_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
 	.inclk(eth_rx_outclk && fgp_rx_en), .in(eth_rx_out),
 	.done(eth_rx_downstream_done),
-	.outclk(efgp_rx_outclk), .out(efgp_rx_out));
+	.offset_outclk(fgp_rx_setoff_req), .offset_out(fgp_rx_offset_out),
+	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
+assign fgp_rx_setoff_val = {fgp_rx_offset_out,
+	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
 
 wire decr_outclk;
 wire [BYTE_LEN-1:0] decr_out;
 aes_decrypt_bytes decr_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(efgp_rx_outclk), .in(efgp_rx_out), .key(KEY),
+	.inclk(fgp_rx_outclk), .in(fgp_rx_out), .key(KEY),
 	.outclk(decr_outclk), .out(decr_out));
 
-wire fgp_rx_setoff_req, fgp_rx_outclk;
-wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
-wire [BYTE_LEN-1:0] fgp_rx_out;
-wire fgp_done;
-fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(decr_outclk), .in(decr_out),
-	.done(fgp_done),
-	.setoff_req(fgp_rx_setoff_req), .setoff_val(fgp_rx_setoff_val),
-	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(fgp_rx_outclk), .in(fgp_rx_out),
+	.inclk(decr_outclk), .in(decr_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
