@@ -9,9 +9,32 @@ module aes_combined(
 
 `include "params.vh"
 
-// TODO: not yet implemented, test a simple delay
-delay #(.DELAY_LEN(4), .DATA_WIDTH(1+BLOCK_LEN)) delay_inst(
-	.clk(clk), .rst(rst), .in({inclk, in}), .out({outclk, out}));
+  reg [127:0] aes_in;
+  reg [127:0] aes_key;
+  wire [127:0] aes_out;
+  reg [4:0] count;
+  reg crypting;
+  
+  always @(posedge clk) begin
+    if(rst) begin
+        count <= 0;
+        crypting <= 0;
+    end
+    else if (inclk) begin
+        count <= 0;
+        aes_in <= in;
+        aes_key <= key;
+        crypting <= 1;
+    end
+    else if (crypting && count < 10) begin
+        count <= count + 1;
+        aes_in <= aes_out;
+    end
+    else crypting <= 0;
+  end      
+  aes_block block(.in(aes_in), .key(aes_key), .block_num(count), .out(aes_out), .decr_select(decr_select));
+  assign out = (count == 9) ? aes_out : 0;
+  assign outclk = (count == 9);
 
 endmodule
 
@@ -47,19 +70,15 @@ blocks_to_bytes bltb_inst(
 
 endmodule
 
-module aes_modules(wire done);
+//module gen_round_key(input [127:0] key, 
+//                     output [127:0] round_key [9:0]);
+//endmodule                     
 
-      reg [127:0] in;
-      reg [127:0] key;
-      wire [127:0] out;
 
-      assign done=1;
-
-      aes_encrypt_block block(.in(in), .out(out), .key(key));
-endmodule
-
-module aes_encrypt_block(input [127:0] in, 
+module aes_block(input [127:0] in, 
                    input [127:0] key,
+                   input [3:0] block_num,
+                   input decr_select,
                    output [127:0] out);
     wire [127:0] sb_out;
     wire [127:0] sr_out;
@@ -67,11 +86,12 @@ module aes_encrypt_block(input [127:0] in,
 
 
     // we're currently not generating correct round keys, TODO
+    // we need to reverse the chain order for decrypt, TODO
 
-    subbytes a(.in(in), .out(sb_out));                   
-    shiftrows b(.in(sb_out), .out(sr_out));
-    mixcolumns c(.in(sr_out), .out(mc_out));
-    addroundkey d(.in(mc_out), .out(out), .key(key));
+    subbytes a(.in(in), .out(sb_out), .decrypt(decr_select));                   
+    shiftrows b(.in(sb_out), .out(sr_out), .decrypt(decr_select));
+    mixcolumns c(.in(sr_out), .out(mc_out), .decrypt(decr_select));
+    addroundkey d(.in(block_num == 9 ? sr_out : mc_out), .out(out), .key(key));
 endmodule
 
 module addroundkey(input [127:0] in,
@@ -620,30 +640,54 @@ module sbox(input [7:0] in,
             assign out = sbox;
 endmodule
 
-//TODO 
 module subbytes(input [127:0] in, 
                 input decrypt, // flag, when set to 1 work in decrypt mode
                 output [127:0] out);
                 
-     sbox q0( .in(in[127:120]),.out(out[127:120]) );
-     sbox q1( .in(in[119:112]),.out(out[119:112]) );
-     sbox q2( .in(in[111:104]),.out(out[111:104]) );
-     sbox q3( .in(in[103:96]),.out(out[103:96]) );
+     wire [127:0] out_e;
+     wire [127:0] out_d;
      
-     sbox q4( .in(in[95:88]),.out(out[95:88]) );
-     sbox q5( .in(in[87:80]),.out(out[87:80]) );
-     sbox q6( .in(in[79:72]),.out(out[79:72]) );
-     sbox q7( .in(in[71:64]),.out(out[71:64]) );
+     sbox q0( .in(in[127:120]),.out(out_e[127:120]) );
+     sbox q1( .in(in[119:112]),.out(out_e[119:112]) );
+     sbox q2( .in(in[111:104]),.out(out_e[111:104]) );
+     sbox q3( .in(in[103:96]),.out(out_e[103:96]) );
      
-     sbox q8( .in(in[63:56]),.out(out[63:56]) );
-     sbox q9( .in(in[55:48]),.out(out[55:48]) );
-     sbox q10(.in(in[47:40]),.out(out[47:40]) );
-     sbox q11(.in(in[39:32]),.out(out[39:32]) );
+     sbox q4( .in(in[95:88]),.out(out_e[95:88]) );
+     sbox q5( .in(in[87:80]),.out(out_e[87:80]) );
+     sbox q6( .in(in[79:72]),.out(out_e[79:72]) );
+     sbox q7( .in(in[71:64]),.out(out_e[71:64]) );
      
-     sbox q12(.in(in[31:24]),.out(out[31:24]) );
-     sbox q13(.in(in[23:16]),.out(out[23:16]) );
-     sbox q14(.in(in[15:8]),.out(out[15:8]) );
-     sbox q16(.in(in[7:0]),.out(out[7:0]) );
+     sbox q8( .in(in[63:56]),.out(out_e[63:56]) );
+     sbox q9( .in(in[55:48]),.out(out_e[55:48]) );
+     sbox q10(.in(in[47:40]),.out(out_e[47:40]) );
+     sbox q11(.in(in[39:32]),.out(out_e[39:32]) );
+     
+     sbox q12(.in(in[31:24]),.out(out_e[31:24]) );
+     sbox q13(.in(in[23:16]),.out(out_e[23:16]) );
+     sbox q14(.in(in[15:8]),.out(out_e[15:8]) );
+     sbox q15(.in(in[7:0]),.out(out_e[7:0]) );
+     
+     inv_sbox iq0( .in(in[127:120]),.out(out_d[127:120]) );
+     inv_sbox iq1( .in(in[119:112]),.out(out_d[119:112]) );
+     inv_sbox iq2( .in(in[111:104]),.out(out_d[111:104]) );
+     inv_sbox iq3( .in(in[103:96]),.out(out_d[103:96]) );
+      
+     inv_sbox iq4( .in(in[95:88]),.out(out_d[95:88]) );
+     inv_sbox iq5( .in(in[87:80]),.out(out_d[87:80]) );
+     inv_sbox iq6( .in(in[79:72]),.out(out_d[79:72]) );
+     inv_sbox iq7( .in(in[71:64]),.out(out_d[71:64]) );
+      
+     inv_sbox iq8( .in(in[63:56]),.out(out_d[63:56]) );
+     inv_sbox iq9( .in(in[55:48]),.out(out_d[55:48]) );
+     inv_sbox iq10(.in(in[47:40]),.out(out_d[47:40]) );
+     inv_sbox iq11(.in(in[39:32]),.out(out_d[39:32]) );
+      
+     inv_sbox iq12(.in(in[31:24]),.out(out_d[31:24]) );
+     inv_sbox iq13(.in(in[23:16]),.out(out_d[23:16]) );
+     inv_sbox iq14(.in(in[15:8]),.out(out_d[15:8]) );
+     inv_sbox iq15(.in(in[7:0]),.out(out_d[7:0]) );
+     
+     assign out = decrypt ? out_d : out_e;
 endmodule
 
 module shiftrows(input [127:0] in, 
@@ -659,7 +703,11 @@ module shiftrows(input [127:0] in,
                     end
                 endgenerate
                 
-                assign out = {bytes[0], bytes[1], bytes[2], bytes[3], 
+                assign out = decrypt ?  {bytes[0], bytes[1], bytes[2], bytes[3], 
+                                         bytes[7], bytes[4], bytes[5], bytes[6],
+                                         bytes[10], bytes[11], bytes[8], bytes[9],
+                                         bytes[13], bytes[14], bytes[15], bytes[12]}
+                            : {bytes[0], bytes[1], bytes[2], bytes[3], 
                               bytes[5], bytes[6], bytes[7], bytes[4],
                               bytes[10], bytes[11], bytes[8], bytes[9],
                               bytes[15], bytes[12], bytes[13], bytes[14]};
@@ -672,7 +720,9 @@ module mixcolumns(input [127:0] in,
                 
         wire [7:0] bytes [15:0];  
         wire [7:0] dbytes [15:0];       // doubled bytes
-        wire [7:0] mixed_bytes [15:0];  
+        wire [7:0] mixed_bytes_e [15:0];  
+        wire [7:0] mixed_bytes_d [15:0];  
+
         
         genvar i;
         generate
@@ -683,7 +733,7 @@ module mixcolumns(input [127:0] in,
         endgenerate
        
        /*
-       We left multiply each column by
+       For encryption, we left multiply each column by
 
        2 3 1 1 
        1 2 3 1
@@ -696,22 +746,37 @@ module mixcolumns(input [127:0] in,
        multiplication by 2 is equivalent to a left shift of 1,
        multiplication by 3 is a left shift of 1 xored with the initial value. 
        using this, we can implement this transformation with no multipliers.       
+       
+       The inverse matrix (for decryption) is 
+       
+       0E 0B 0D 09
+       09 0E 0B 0D
+       0D 09 0E 0B
+       0B 0D 09 0E
        */
        
-        // TODO: check if i need to process mods here. 
+        
         genvar j;
         generate
             for (j = 0; j < 4; j=j+1) begin : gen_column_mix 
-                assign mixed_bytes[i] = dbytes[i]^dbytes[i+4]^bytes[i+4]^bytes[i+8]^bytes[i+12];
-                assign mixed_bytes[i+4] = bytes[i]^dbytes[i+4]^dbytes[i+8]^bytes[i+8]^bytes[i+12];
-                assign mixed_bytes[i+8] = bytes[i]^bytes[i+4]^dbytes[i+8]^dbytes[i+12]^bytes[i+12];
-                assign mixed_bytes[i+12] = dbytes[i]^bytes[i]^bytes[i+4]^bytes[i+8]^dbytes[i+12];
+                assign mixed_bytes_d[j] = dbytes[j]*14 + dbytes[j+4]*11 + dbytes[j+8]*13 + dbytes[j+12]*9;
+                assign mixed_bytes_d[j+4] = dbytes[j]*9 + dbytes[j+4]*14 + dbytes[j+8]*11 + dbytes[j+12]*13;
+                assign mixed_bytes_d[j+8] = dbytes[j]*13 + dbytes[j+4]*9 + dbytes[j+8]*14 + dbytes[j+12]*11;
+                assign mixed_bytes_d[j+12] = dbytes[j]*11 + dbytes[j+4]*13 + dbytes[j+8]*9 + dbytes[j+12]*14;
+                
+                assign mixed_bytes_e[j] = dbytes[j]^dbytes[j+4]^bytes[j+4]^bytes[j+8]^bytes[j+12];
+                assign mixed_bytes_e[j+4] = bytes[j]^dbytes[j+4]^dbytes[j+8]^bytes[j+8]^bytes[j+12];
+                assign mixed_bytes_e[j+8] = bytes[j]^bytes[j+4]^dbytes[j+8]^dbytes[j+12]^bytes[j+12];
+                assign mixed_bytes_e[j+12] = dbytes[j]^bytes[j]^bytes[j+4]^bytes[j+8]^dbytes[j+12];
             end
         endgenerate
         
-        assign out = {bytes[0], bytes[1], bytes[2], bytes[3],
-                      bytes[4], bytes[5], bytes[6], bytes[7],
-                      bytes[8], bytes[9], bytes[10], bytes[11], 
-                      bytes[12], bytes[13], bytes[14], bytes[15]};
-        
+        assign out = decrypt ? {mixed_bytes_e[0], mixed_bytes_e[1], mixed_bytes_e[2], mixed_bytes_e[3],
+                                      mixed_bytes_e[4], mixed_bytes_e[5], mixed_bytes_e[6], mixed_bytes_e[7],
+                                      mixed_bytes_e[8], mixed_bytes_e[9], mixed_bytes_e[10], mixed_bytes_e[11], 
+                                      mixed_bytes_e[12], mixed_bytes_e[13], mixed_bytes_e[14], mixed_bytes_e[15]}
+                            :{mixed_bytes_d[0], mixed_bytes_d[1], mixed_bytes_d[2], mixed_bytes_d[3],
+                                      mixed_bytes_d[4], mixed_bytes_d[5], mixed_bytes_d[6], mixed_bytes_d[7],
+                                      mixed_bytes_d[8], mixed_bytes_d[9], mixed_bytes_d[10], mixed_bytes_d[11], 
+                                      mixed_bytes_d[12], mixed_bytes_d[13], mixed_bytes_d[14], mixed_bytes_d[15]};
 endmodule

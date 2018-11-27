@@ -287,6 +287,50 @@ end
 
 endmodule
 
+module test_aes_full_encrypt();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk));
+
+reg [127:0] in;
+reg [127:0] key;
+wire [127:0] out_enc, dec;
+reg rst; 
+reg in_clk;
+wire out_clk, out_clk_2; 
+
+aes_combined enc_block(.clk(clk), .rst(rst), .key(key), .inclk(in_clk), .in(in), .outclk(out_clk), .out(out_enc), .decr_select(0));
+aes_combined dec_block(.clk(clk), .rst(rst), .key(key), .inclk(out_clk), .in(out_enc), .outclk(out_clk_2), .out(dec), .decr_select(1));
+
+
+initial begin
+    rst = 1;
+    in_clk = 0;
+	#250
+	rst = 0;
+	in = 200;
+    key = 0;
+    #10
+    in_clk = 1;
+    #10
+    in_clk = 0;
+	#800
+	
+	
+	
+
+	$stop();
+end
+
+endmodule
+
 module test_aes_one_block_encrypt();
 
 reg clk_100mhz = 0;
@@ -303,14 +347,14 @@ reg [127:0] in;
 reg [127:0] key;
 wire [127:0] out;
 
-aes_encrypt_block aes(
-	.in(in), .key(key), .out(out));
+aes_block aes(
+	.in(in), .key(key), .out(out), .decr_select(0));
 
 initial begin
 	#100
 	in = 200;
     key = 0;
-	#1000
+	#40
 
 	$stop();
 end

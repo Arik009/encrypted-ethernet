@@ -558,7 +558,7 @@ clk_wiz_0 clk_wiz_inst(
 reg [127:0] aes_in, aes_key;
 wire [127:0] aes_out;
 reg [6:0] aes_cnt = 0;
-aes_encrypt_block block(.in(aes_in), .out(aes_out), .key(aes_key));
+// aes_encrypt_block block(.in(aes_in), .out(aes_out), .key(aes_key));
 reg [127:0] aes_out_shift;
 reg jb_out;
 assign JB[0] = jb_out;
