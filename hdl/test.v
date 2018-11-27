@@ -655,6 +655,22 @@ assign eth_ram_outclk = config_transmit ? ram_outclk : 0;
 assign uart_ram_out = config_transmit ? 0 : ram_out;
 assign eth_ram_out = config_transmit ? ram_out : 0;
 
+////// AES
+
+wire aes_encr_rst, aes_decr_rst;
+wire aes_encr_inclk, aes_decr_inclk, aes_encr_outclk, aes_decr_outclk;
+wire [BYTE_LEN-1:0] aes_encr_in, aes_decr_in, aes_encr_out, aes_decr_out;
+aes_combined_bytes aes_encr_inst(
+	.clk(clk), .rst(rst || aes_encr_rst),
+	.inclk(aes_encr_inclk), .in(aes_encr_in), .key(KEY),
+	.outclk(aes_encr_outclk), .out(aes_encr_out),
+	.decr_select(0));
+aes_combined_bytes aes_decr_inst(
+	.clk(clk), .rst(rst || aes_decr_rst),
+	.inclk(aes_decr_inclk), .in(aes_decr_in), .key(KEY),
+	.outclk(aes_decr_outclk), .out(aes_decr_out),
+	.decr_select(0));
+
 ////// UART TX <= ROM
 
 wire uart_tx_inclk, uart_tx_readclk;
@@ -701,18 +717,15 @@ fgp_rx encr_fgp_rx(
 	.offset_out(uart_rx_fgp_offset_out),
 	.outclk(uart_rx_fgp_outclk), .out(uart_rx_fgp_out));
 
-wire encr_outclk;
-wire [BYTE_LEN-1:0] encr_out;
-aes_encrypt_bytes encr_inst(
-	.clk(clk), .rst(uart_rx_downstream_rst),
-	.inclk(uart_rx_fgp_outclk), .in(uart_rx_fgp_out), .key(KEY),
-	.outclk(encr_outclk), .out(encr_out));
+assign aes_encr_rst = uart_rx_downstream_rst;
+assign aes_encr_inclk = uart_rx_fgp_outclk;
+assign aes_encr_in = uart_rx_fgp_out;
 
 wire encr_fgp_outclk;
-assign encr_fgp_outclk = uart_rx_fgp_offset_outclk || encr_outclk;
+assign encr_fgp_outclk = uart_rx_fgp_offset_outclk || aes_encr_outclk;
 wire [BYTE_LEN-1:0] encr_fgp_out;
 assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
-	uart_rx_fgp_offset_out : encr_out;
+	uart_rx_fgp_offset_out : aes_encr_out;
 
 localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
 localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
@@ -835,18 +848,15 @@ fgp_rx fgp_rx_inst(
 assign fgp_rx_setoff_val = {fgp_rx_offset_out,
 	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
 
-wire decr_outclk;
-wire [BYTE_LEN-1:0] decr_out;
-aes_decrypt_bytes decr_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(fgp_rx_outclk), .in(fgp_rx_out), .key(KEY),
-	.outclk(decr_outclk), .out(decr_out));
+assign aes_decr_rst = eth_rx_downstream_rst;
+assign aes_decr_inclk = fgp_rx_outclk;
+assign aes_decr_in = fgp_rx_out;
 
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(decr_outclk), .in(decr_out),
+	.inclk(aes_decr_outclk), .in(aes_decr_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(

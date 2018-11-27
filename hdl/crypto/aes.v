@@ -1,10 +1,11 @@
 // inclk is asserted when a block is presented on in
-// outclk should be asserted when an encrypted block is presented on out
+// outclk should be asserted when a block is presented on out
 // always takes the same number of clock cycles per block
-module aes_encrypt(
+module aes_combined(
 	input clk, rst,
 	input inclk, input [BLOCK_LEN-1:0] in, key,
-	output outclk, output [BLOCK_LEN-1:0] out);
+	output outclk, output [BLOCK_LEN-1:0] out,
+	input decr_select);
 
 `include "params.vh"
 
@@ -14,27 +15,11 @@ delay #(.DELAY_LEN(4), .DATA_WIDTH(1+BLOCK_LEN)) delay_inst(
 
 endmodule
 
-// inclk is asserted when a block is presented on in
-// outclk should be asserted when an decrypted block is presented on out
-// always takes the same number of clock cycles per block (at most 64)
-module aes_decrypt(
-	input clk, rst,
-	input inclk, input [BLOCK_LEN-1:0] in, key,
-	output outclk, output [BLOCK_LEN-1:0] out);
-
-`include "params.vh"
-
-// TODO: not yet implemented, test with a simple delay
-delay #(.DELAY_LEN(4), .DATA_WIDTH(1+BLOCK_LEN)) delay_inst(
-	.clk(clk), .rst(rst), .in({inclk, in}), .out({outclk, out}));
-
-endmodule
-
-// bytes interface for aes_encrypt
-module aes_encrypt_bytes(
+// bytes interface for aes_combined
+module aes_combined_bytes(
 	input clk, rst,
 	input inclk, input [BYTE_LEN-1:0] in, input [BLOCK_LEN-1:0] key,
-	output outclk, output [BYTE_LEN-1:0] out);
+	output outclk, output [BYTE_LEN-1:0] out, input decr_select);
 
 `include "params.vh"
 
@@ -45,48 +30,18 @@ bytes_to_blocks btbl_inst(
 	.inclk(inclk), .in(in),
 	.in_done(1'b0),
 	.outclk(btbl_outclk), .out(btbl_out));
-wire encr_outclk;
-wire [BLOCK_LEN-1:0] encr_out;
-aes_encrypt encr_inst(
+wire aes_outclk;
+wire [BLOCK_LEN-1:0] aes_out;
+aes_combined aes_inst(
 	.clk(clk), .rst(rst),
 	.inclk(btbl_outclk), .in(btbl_out), .key(key),
-	.outclk(encr_outclk), .out(encr_out));
+	.outclk(aes_outclk), .out(aes_out),
+	.decr_select(decr_select));
 wire bltb_outclk;
 wire [BYTE_LEN-1:0] bltb_out;
 blocks_to_bytes bltb_inst(
 	.clk(clk), .rst(rst),
-	.inclk(encr_outclk), .in(encr_out),
-	.in_done(1'b0),
-	.outclk(outclk), .out(out));
-
-endmodule
-
-// bytes interface for aes_decrypt
-module aes_decrypt_bytes(
-	input clk, rst,
-	input inclk, input [BYTE_LEN-1:0] in, input [BLOCK_LEN-1:0] key,
-	output outclk, output [BYTE_LEN-1:0] out);
-
-`include "params.vh"
-
-wire btbl_outclk;
-wire [BLOCK_LEN-1:0] btbl_out;
-bytes_to_blocks btbl_inst(
-	.clk(clk), .rst(rst),
-	.inclk(inclk), .in(in),
-	.in_done(1'b0),
-	.outclk(btbl_outclk), .out(btbl_out));
-wire decr_outclk;
-wire [BLOCK_LEN-1:0] decr_out;
-aes_decrypt decr_inst(
-	.clk(clk), .rst(rst),
-	.inclk(btbl_outclk), .in(btbl_out), .key(key),
-	.outclk(decr_outclk), .out(decr_out));
-wire bltb_outclk;
-wire [BYTE_LEN-1:0] bltb_out;
-blocks_to_bytes bltb_inst(
-	.clk(clk), .rst(rst),
-	.inclk(decr_outclk), .in(decr_out),
+	.inclk(aes_outclk), .in(aes_out),
 	.in_done(1'b0),
 	.outclk(outclk), .out(out));
 
