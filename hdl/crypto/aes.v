@@ -22,7 +22,8 @@ module aes_combined(
     end
     else if (inclk) begin
         count <= 0;
-        aes_in <= in;
+        if(!decr_select) aes_in <= in^key;
+        else aes_in <= in;
         aes_key <= key;
         crypting <= 1;
     end
@@ -83,15 +84,34 @@ module aes_block(input [127:0] in,
     wire [127:0] sb_out;
     wire [127:0] sr_out;
     wire [127:0] mc_out;
-
+    wire[127:0] rc_out;
+    reg [127:0] sb_in;
+    reg [127:0] sr_in;
+    reg [127:0] mc_in;
+    reg [127:0] rc_in;
 
     // we're currently not generating correct round keys, TODO
     // we need to reverse the chain order for decrypt, TODO
-
-    subbytes a(.in(in), .out(sb_out), .decrypt(decr_select));                   
-    shiftrows b(.in(sb_out), .out(sr_out), .decrypt(decr_select));
-    mixcolumns c(.in(sr_out), .out(mc_out), .decrypt(decr_select));
-    addroundkey d(.in(block_num == 9 ? sr_out : mc_out), .out(out), .key(key));
+    always @(*) begin
+        if(decr_select) begin
+            sr_in <= in;
+            sb_in <= sr_out;
+            rc_in <= sb_out;
+            mc_in <= rc_out;
+        end
+        else begin
+            sb_in <= in;
+            sr_in <= sb_out;
+            mc_in <= sr_out;
+            rc_in <= block_num == 9 ? sr_out : mc_out;
+        end
+    end
+    subbytes a(.in(sb_in), .out(sb_out), .decrypt(decr_select));                   
+    shiftrows b(.in(sr_in), .out(sr_out), .decrypt(decr_select));
+    mixcolumns c(.in(mc_in), .out(mc_out), .decrypt(decr_select));
+    addroundkey d(.in(rc_in), .out(rc_out), .key(key));
+    
+    assign out = decr_select? (block_num == 9 ? rc_out:mc_out) : rc_out;
 endmodule
 
 module addroundkey(input [127:0] in,
@@ -699,7 +719,7 @@ module shiftrows(input [127:0] in,
                 genvar i;
                 generate
                     for (i = 0; i < 16; i=i+1) begin : gen_bytes 
-                        assign bytes[i] = in[127-i:127-i-7];
+                        assign bytes[15-i] = in[i*8+7:i*8];
                     end
                 endgenerate
                 
@@ -713,13 +733,14 @@ module shiftrows(input [127:0] in,
                               bytes[15], bytes[12], bytes[13], bytes[14]};
 endmodule
 
-//TODO
 module mixcolumns(input [127:0] in, 
                 input decrypt, // flag, when set to 1 work in decrypt mode
                 output [127:0] out);
                 
         wire [7:0] bytes [15:0];  
         wire [7:0] dbytes [15:0];       // doubled bytes
+        wire [7:0] ddbytes [15:0];       // bytes * 4
+        wire [7:0] dddbytes [15:0];       // bytse * 8
         wire [7:0] mixed_bytes_e [15:0];  
         wire [7:0] mixed_bytes_d [15:0];  
 
@@ -727,10 +748,13 @@ module mixcolumns(input [127:0] in,
         genvar i;
         generate
             for (i = 0; i < 16; i=i+1) begin : gen_bytes 
-                assign bytes[i] = in[127-i*8:127-i*8-7];
-                assign dbytes[i] = bytes[i] << 1;
+                assign bytes[i] = in[i*8+7:i*8];
+                assign dbytes[i] = {bytes[i][6 : 0], 1'b0} ^ (8'h1b & {8{bytes[i][7]}});
+                assign ddbytes[i] = {dbytes[i][6 : 0], 1'b0} ^ (8'h1b & {8{dbytes[i][7]}});
+                assign dddbytes[i] = {ddbytes[i][6 : 0], 1'b0} ^ (8'h1b & {8{ddbytes[i][7]}});
             end
         endgenerate
+       
        
        /*
        For encryption, we left multiply each column by
@@ -759,10 +783,30 @@ module mixcolumns(input [127:0] in,
         genvar j;
         generate
             for (j = 0; j < 4; j=j+1) begin : gen_column_mix 
-                assign mixed_bytes_d[j] = dbytes[j]*14 + dbytes[j+4]*11 + dbytes[j+8]*13 + dbytes[j+12]*9;
-                assign mixed_bytes_d[j+4] = dbytes[j]*9 + dbytes[j+4]*14 + dbytes[j+8]*11 + dbytes[j+12]*13;
-                assign mixed_bytes_d[j+8] = dbytes[j]*13 + dbytes[j+4]*9 + dbytes[j+8]*14 + dbytes[j+12]*11;
-                assign mixed_bytes_d[j+12] = dbytes[j]*11 + dbytes[j+4]*13 + dbytes[j+8]*9 + dbytes[j+12]*14;
+                //                assign mixed_bytes_d[j] = dbytes[j]+ddbytes[j]+dddbytes[j]+
+            //                                          bytes[j+4]+dbytes[j+4]+dddbytes[j+4]+
+            //                                          bytes[j+8]+ddbytes[j+8]+dddbytes[j+8]+
+            //                                          bytes[j+12]+dddbytes[j+12];
+            //                assign mixed_bytes_d[j+4] = dbytes[j]*9 + dbytes[j+4]*14 + dbytes[j+8]*11 + dbytes[j+12]*13;
+            //                assign mixed_bytes_d[j+8] = dbytes[j]*13 + dbytes[j+4]*9 + dbytes[j+8]*14 + dbytes[j+12]*11;
+            //                assign mixed_bytes_d[j+12] = dbytes[j]*11 + dbytes[j+4]*13 + dbytes[j+8]*9 + dbytes[j+12]*14;
+
+                assign mixed_bytes_d[j] = dbytes[j]^ddbytes[j]^dddbytes[j]^
+                                            bytes[j+4]^dbytes[j+4]^dddbytes[j+4]^
+                                            bytes[j+8]^ddbytes[j+8]^dddbytes[j+8]^
+                                            bytes[j+12]^dddbytes[j+12];
+                assign mixed_bytes_d[j+4] = bytes[j]^dddbytes[j]^
+                                            dbytes[j+4]^ddbytes[j+4]^dddbytes[j+4]^
+                                            bytes[j+8]^dbytes[j+8]^dddbytes[j+8]^
+                                            bytes[j+12]^ddbytes[j+12]^dddbytes[j+12];
+                assign mixed_bytes_d[j+8] = bytes[j]^ddbytes[j]^dddbytes[j]^
+                                            bytes[j+4]^dddbytes[j+4]^
+                                            dbytes[j+8]^ddbytes[j+8]^dddbytes[j+8]^
+                                            bytes[j+12]^dbytes[j+12]^dddbytes[j+12];
+                assign mixed_bytes_d[j+12] = bytes[j]^dbytes[j]^dddbytes[j]^
+                                            bytes[j+4]^ddbytes[j+4]^dddbytes[j+4]^
+                                            bytes[j+8]^dddbytes[j+8]^
+                                            dbytes[j+12]^ddbytes[j+12]^dddbytes[j+12];
                 
                 assign mixed_bytes_e[j] = dbytes[j]^dbytes[j+4]^bytes[j+4]^bytes[j+8]^bytes[j+12];
                 assign mixed_bytes_e[j+4] = bytes[j]^dbytes[j+4]^dbytes[j+8]^bytes[j+8]^bytes[j+12];
@@ -771,12 +815,13 @@ module mixcolumns(input [127:0] in,
             end
         endgenerate
         
-        assign out = decrypt ? {mixed_bytes_e[0], mixed_bytes_e[1], mixed_bytes_e[2], mixed_bytes_e[3],
-                                      mixed_bytes_e[4], mixed_bytes_e[5], mixed_bytes_e[6], mixed_bytes_e[7],
-                                      mixed_bytes_e[8], mixed_bytes_e[9], mixed_bytes_e[10], mixed_bytes_e[11], 
-                                      mixed_bytes_e[12], mixed_bytes_e[13], mixed_bytes_e[14], mixed_bytes_e[15]}
-                            :{mixed_bytes_d[0], mixed_bytes_d[1], mixed_bytes_d[2], mixed_bytes_d[3],
-                                      mixed_bytes_d[4], mixed_bytes_d[5], mixed_bytes_d[6], mixed_bytes_d[7],
-                                      mixed_bytes_d[8], mixed_bytes_d[9], mixed_bytes_d[10], mixed_bytes_d[11], 
-                                      mixed_bytes_d[12], mixed_bytes_d[13], mixed_bytes_d[14], mixed_bytes_d[15]};
+        assign out = decrypt ? {mixed_bytes_d[15], mixed_bytes_d[14], mixed_bytes_d[13], mixed_bytes_d[12], 
+                                            mixed_bytes_d[11], mixed_bytes_d[10], mixed_bytes_d[9], mixed_bytes_d[8],
+                                            mixed_bytes_d[7], mixed_bytes_d[6], mixed_bytes_d[5], mixed_bytes_d[4], 
+                                            mixed_bytes_d[3], mixed_bytes_d[2], mixed_bytes_d[1], mixed_bytes_d[0]}
+                            :   
+                                    {mixed_bytes_e[15], mixed_bytes_e[14], mixed_bytes_e[13], mixed_bytes_e[12], 
+                                    mixed_bytes_e[11], mixed_bytes_e[10], mixed_bytes_e[9], mixed_bytes_e[8], 
+                                    mixed_bytes_e[7], mixed_bytes_e[6], mixed_bytes_e[5], mixed_bytes_e[4], 
+                                    mixed_bytes_e[3], mixed_bytes_e[2], mixed_bytes_e[1], mixed_bytes_e[0]};
 endmodule

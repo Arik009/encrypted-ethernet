@@ -315,7 +315,7 @@ initial begin
     in_clk = 0;
 	#250
 	rst = 0;
-	in = 200;
+	in = 213412334;
     key = 0;
     #10
     in_clk = 1;
@@ -325,6 +325,55 @@ initial begin
 	
 	
 	
+
+	$stop();
+end
+
+endmodule
+
+module test_aes_inversion();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk));
+
+reg [127:0] in;
+reg [127:0] key;
+wire [127:0] out_enc_s, dec_s;
+wire [127:0] out_enc_sr, dec_sr;
+wire [127:0] out_enc_m, dec_m;
+wire [127:0] out_enc_a, dec_a;
+
+reg rst; 
+reg in_clk;
+wire out_clk, out_clk_2; 
+
+subbytes a(.in(in), .out(out_enc_s), .decrypt(0));
+subbytes b(.in(out_enc_s),.out(dec_s), .decrypt(1));
+shiftrows c(.in(in), .out(out_enc_sr), .decrypt(0));
+shiftrows d(.in(out_enc_sr), .out(dec_sr), .decrypt(1));
+mixcolumns e(.in(in), .out(out_enc_m), .decrypt(0));
+mixcolumns f(.in(out_enc_m), .out(dec_m), .decrypt(1));
+addroundkey g(.in(in), .out(out_enc_a), .key(key));
+addroundkey h(.in(out_enc_a), .out(dec_a), .key(key));
+
+
+initial begin
+	#250
+	rst = 0;
+	in = 2009789435;
+    key = 1234343;
+    #10
+    in_clk = 1;
+    #10
+    in_clk = 0;
+	#800
 
 	$stop();
 end
