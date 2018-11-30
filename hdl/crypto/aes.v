@@ -22,8 +22,7 @@ module aes_combined(
     end
     else if (inclk) begin
         count <= 0;
-        if(!decr_select) aes_in <= in^key;
-        else aes_in <= in;
+        aes_in <= in^key;
         aes_key <= key;
         crypting <= 1;
     end
@@ -94,16 +93,16 @@ module aes_block(input [127:0] in,
     // we need to reverse the chain order for decrypt, TODO
     always @(*) begin
         if(decr_select) begin
-            sr_in <= in;
-            sb_in <= sr_out;
-            rc_in <= sb_out;
-            mc_in <= rc_out;
+            sr_in = in;
+            sb_in = sr_out;
+            rc_in = sb_out;
+            mc_in = rc_out;
         end
         else begin
-            sb_in <= in;
-            sr_in <= sb_out;
-            mc_in <= sr_out;
-            rc_in <= block_num == 9 ? sr_out : mc_out;
+            sb_in = in;
+            sr_in = sb_out;
+            mc_in = sr_out;
+            rc_in = block_num == 9 ? sr_out : mc_out;
         end
     end
     subbytes a(.in(sb_in), .out(sb_out), .decrypt(decr_select));                   

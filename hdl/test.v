@@ -316,7 +316,7 @@ initial begin
 	#250
 	rst = 0;
 	in = 213412334;
-    key = 0;
+    key = 12341234;
     #10
     in_clk = 1;
     #10
