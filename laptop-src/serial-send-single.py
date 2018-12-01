@@ -5,8 +5,8 @@ import fpga_serial
 import eth
 
 fin_name = 'images/nyan.jpg'
-IMAGE_WIDTH = 32
-IMAGE_HEIGHT = 32
+IMAGE_WIDTH = 128
+IMAGE_HEIGHT = 128
 
 def send_single(ser):
 	bytestream = eth.gen_eth_fgp_payload(512,

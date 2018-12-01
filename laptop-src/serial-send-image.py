@@ -3,8 +3,8 @@ sys.path.append('../lib/')
 import image_bytes
 import fpga_serial
 
-IMAGE_WIDTH = 32
-IMAGE_HEIGHT = 32
+IMAGE_WIDTH = 128
+IMAGE_HEIGHT = 128
 
 def send_image(ser):
 	fin_name = 'images/nyan.jpg'

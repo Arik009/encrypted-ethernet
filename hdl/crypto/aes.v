@@ -80,37 +80,33 @@ module aes_block(input [127:0] in,
                    input [3:0] block_num,
                    input decr_select,
                    output [127:0] out);
-    wire [127:0] sb_out;
-    wire [127:0] sr_out;
-    wire [127:0] mc_out;
-    wire[127:0] rc_out;
-    reg [127:0] sb_in;
-    reg [127:0] sr_in;
-    reg [127:0] mc_in;
-    reg [127:0] rc_in;
+
+    wire [127:0] sb_out_e;
+    wire [127:0] sr_out_e;
+    wire [127:0] mc_out_e;
+    wire [127:0] rc_out_e;
+    wire [127:0] sb_out_d;
+    wire [127:0] sr_out_d;
+    wire [127:0] mc_out_d;
+    wire [127:0] rc_out_d;
 
     // we're currently not generating correct round keys, TODO
-    // we need to reverse the chain order for decrypt, TODO
-    always @(*) begin
-        if(decr_select) begin
-            sr_in = in;
-            sb_in = sr_out;
-            rc_in = sb_out;
-            mc_in = rc_out;
-        end
-        else begin
-            sb_in = in;
-            sr_in = sb_out;
-            mc_in = sr_out;
-            rc_in = block_num == 9 ? sr_out : mc_out;
-        end
-    end
-    subbytes a(.in(sb_in), .out(sb_out), .decrypt(decr_select));                   
-    shiftrows b(.in(sr_in), .out(sr_out), .decrypt(decr_select));
-    mixcolumns c(.in(mc_in), .out(mc_out), .decrypt(decr_select));
-    addroundkey d(.in(rc_in), .out(rc_out), .key(key));
-    
-    assign out = decr_select? (block_num == 9 ? rc_out:mc_out) : rc_out;
+
+    subbytes a_e(.in(in), .out(sb_out_e), .decrypt(1'b0));
+    shiftrows b_e(.in(sb_out_e), .out(sr_out_e), .decrypt(1'b0));
+    mixcolumns c_e(.in(sr_out_e), .out(mc_out_e), .decrypt(1'b0));
+    addroundkey d_e(
+		.in((block_num == 9) ? sr_out_e : mc_out_e),
+		.out(rc_out_e), .key(key));
+
+    shiftrows b_d(.in(in), .out(sr_out_d), .decrypt(1'b1));
+    subbytes a_d(.in(sr_out_d), .out(sb_out_d), .decrypt(1'b1));
+    addroundkey d_d(.in(sb_out_d), .out(rc_out_d), .key(key));
+    mixcolumns c_d(.in(rc_out_d), .out(mc_out_d), .decrypt(1'b1));
+
+	assign out = decr_select ? (
+		(block_num == 9) ? rc_out_d : mc_out_d) : rc_out_e;
+
 endmodule
 
 module addroundkey(input [127:0] in,

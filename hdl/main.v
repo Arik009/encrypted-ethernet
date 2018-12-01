@@ -311,7 +311,6 @@ assign uart_ram_win = encr_fgp_out;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst) begin
 		uart_rx_cnt <= 0;
-		pb_queue_head <= 0;
 		pb_queue_tail <= 0;
 	end else if (encr_fgp_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin

@@ -7,8 +7,8 @@ import image_bytes
 
 STOP_EARLY = False
 image_dir = 'images/nyan/'
-IMAGE_WIDTH = 32
-IMAGE_HEIGHT = 32
+IMAGE_WIDTH = 128
+IMAGE_HEIGHT = 128
 
 # Only cycle a few times for testing
 cnt = 0

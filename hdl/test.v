@@ -762,7 +762,7 @@ aes_combined_bytes aes_decr_inst(
 	.clk(clk), .rst(rst || aes_decr_rst),
 	.inclk(aes_decr_inclk), .in(aes_decr_in), .key(KEY),
 	.outclk(aes_decr_outclk), .out(aes_decr_out),
-	.decr_select(0));
+	.decr_select(1));
 
 ////// UART TX <= ROM
 
@@ -830,7 +830,6 @@ assign uart_ram_win = encr_fgp_out;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst) begin
 		uart_rx_cnt <= 0;
-		pb_queue_head <= 0;
 		pb_queue_tail <= 0;
 	end else if (encr_fgp_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin
@@ -854,6 +853,7 @@ always @(posedge clk) begin
 	if (rst) begin
 		eth_tx_active <= 0;
 		eth_tx_start <= 0;
+		pb_queue_head <= 0;
 	end else if (eth_tx_start) begin
 		eth_tx_start <= 0;
 		eth_tx_active <= 1;

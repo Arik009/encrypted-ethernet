@@ -1,4 +1,4 @@
-NUM_ELEMENTS = 4096;
+NUM_ELEMENTS = 16384;
 arr = list(range(NUM_ELEMENTS))
 
 with open('debug.coe', 'w') as f:
