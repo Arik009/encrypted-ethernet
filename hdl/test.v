@@ -979,6 +979,43 @@ end
 
 endmodule
 
+module test_ipv4_checksum();
+
+`include "params.vh"
+
+reg clk = 0;
+// 50MHz clock
+initial forever #10 clk = ~clk;
+
+localparam IN_LEN = 20 * BYTE_LEN;
+reg [IN_LEN-1:0] in = 160'h45000166718a00008011000000000000ffffffff;
+
+reg rst = 1;
+reg inclk = 0;
+wire [2*BYTE_LEN-1:0] checksum;
+
+ipv4_checksum ipv4_checksum_inst(
+	.clk(clk), .rst(rst),
+	.inclk(inclk), .in(in[IN_LEN-BYTE_LEN+:BYTE_LEN]),
+	.out(checksum));
+
+always @(posedge clk) begin
+	if (inclk)
+		in <= {in[0+:IN_LEN-BYTE_LEN], 8'h0};
+end
+
+initial begin
+	#100
+	rst = 0;
+	inclk = 1;
+
+	#((IN_LEN/BYTE_LEN + 2)*20)
+
+	$stop();
+end
+
+endmodule
+
 module test_main();
 
 reg clk_100mhz = 0;
