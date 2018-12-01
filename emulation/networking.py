@@ -32,27 +32,28 @@ dhcp_xid = random.getrandbits(32)
 eth.sendeth(eth.gen_eth(eth.MAC_BROADCAST, eth.MAC_SEND, eth.ETHERTYPE_IP,
 	dhcp.gen_dhcp_discover(dhcp_xid, 0)
 ))
+dhcp_tx_start = time.time()
 
 def filter_dhcp_reply(packet, dhcp_xid):
+	dhcp_server_mac = eth.get_src_mac(packet)
 	if eth.get_ethertype(packet) != eth.ETHERTYPE_IP:
-		return None
+		return None, None
 	packet = packet[eth.HEADER_LEN:]
 	if (ip.ip_get_version(packet) != ip.IP_VERSION_4 or
-		ip.ip_get_prot(packet) != ip.IP_PROT_UDP or
-		ip.ip_get_dst_addr(packet) != ip.IPADDR_BROADCAST):
-		return None
+		ip.ip_get_prot(packet) != ip.IP_PROT_UDP):
+		return None, None
 	packet = packet[ip.IP_HEADER_LEN_DEFAULT*4:]
 	if (ip.udp_get_dst_port(packet) != dhcp.PORT_CLIENT):
-		return None
+		return None, None
 	packet = packet[ip.UDP_HEADER_LEN:]
 	if (dhcp.get_op(packet) != dhcp.OP_REPLY or
 		dhcp.get_xid(packet) != dhcp_xid):
-		return None
-	return packet
+		return None, None
+	return packet, dhcp_server_mac
 
 while True:
 	packet = sock.recv(BUF_SIZE)
-	packet = filter_dhcp_reply(packet, dhcp_xid)
+	packet, dhcp_server_mac = filter_dhcp_reply(packet, dhcp_xid)
 	if packet is None:
 		continue
 	client_ip = dhcp.get_ip(packet)
@@ -60,12 +61,15 @@ while True:
 	upstream_ip = dhcp_opts[dhcp.OPT_ROUTER]
 	netmask = dhcp_opts[dhcp.OPT_MASK]
 	dns_ip = dhcp_opts[dhcp.OPT_DNS]
+	dhcp_server_ip = dhcp_opts[dhcp.OPT_DHCP_SERVER_IP]
 	break
 
 while True:
-	eth.sendeth(eth.gen_eth(eth.MAC_BROADCAST, eth.MAC_SEND,
+	eth.sendeth(eth.gen_eth(dhcp_server_mac, eth.MAC_SEND,
 		eth.ETHERTYPE_IP,
-		dhcp.gen_dhcp_request(dhcp_xid, 0, client_ip)
+		dhcp.gen_dhcp_request(dhcp_xid,
+			int(time.time() - dhcp_tx_start), client_ip,
+			False)
 	))
 	start_time = time.time()
 	success = False
@@ -75,7 +79,7 @@ while True:
 			print('No reply found, sending another DHCP request')
 			break
 		packet = sock.recv(BUF_SIZE)
-		packet = filter_dhcp_reply(packet, dhcp_xid)
+		packet, _ = filter_dhcp_reply(packet, dhcp_xid)
 		if packet is None:
 			continue
 		success = True
@@ -97,6 +101,31 @@ while True:
 		continue
 	upstream_mac = arp.get_sender_mac(packet)
 	break
+
+time.sleep(5)
+
+while True:
+	eth.sendeth(eth.gen_eth(dhcp_server_mac, eth.MAC_SEND,
+		eth.ETHERTYPE_IP,
+		dhcp.gen_dhcp_request(dhcp_xid,
+			int(time.time() - dhcp_tx_start), client_ip,
+			True)
+	))
+	start_time = time.time()
+	success = False
+
+	while True:
+		if time.time() - start_time > 5.0:
+			print('No reply found, sending another DHCP request')
+			break
+		packet = sock.recv(BUF_SIZE)
+		packet, _ = filter_dhcp_reply(packet, dhcp_xid)
+		if packet is None:
+			continue
+		success = True
+		break
+	if success:
+		break
 
 time.sleep(1)
 

@@ -21,21 +21,37 @@ OPT_MASK = 1
 OPT_ROUTER = 3
 OPT_DNS = 6
 OPT_DOMAIN_NAME = 15
+OPT_DHCP_SERVER_IP = 54
 OPT_REQUESTED_IP = 50
 OPT_END = 255
 
 HEADER_LEN_BASE = (12 + ip.IPADDR_LEN * 4 + CHADDR_LEN +
 	SNAME_LEN + FILE_LEN + len(MAGIC_COOKIE))
 
-def gen_dhcp(xid, secs, opt_type, client_ip):
+def gen_dhcp(xid, secs, opt_type, client_ip, renew=False, dhcp_server_ip=ip.IPADDR_BROADCAST):
 	opt_list = bytes([
 		OPT_MASK,
 		OPT_ROUTER,
 		OPT_DNS,
-		OPT_DOMAIN_NAME
+		OPT_DOMAIN_NAME,
+		OPT_DHCP_SERVER_IP
 	])
+	if renew:
+		extra_options = bytes([])
+	elif client_ip == ip.IPADDR_ZERO:
+		extra_options = bytes([
+			OPT_LIST_CODE,
+			len(opt_list)
+		]) + opt_list
+	else:
+		extra_options = bytes([
+			OPT_REQUESTED_IP,
+			ip.IPADDR_LEN
+		]) + client_ip
+
 	return ip.gen_ip_udp(
-		ip.IPADDR_ZERO, ip.IPADDR_BROADCAST,
+		(client_ip if renew else ip.IPADDR_ZERO),
+		dhcp_server_ip,
 		PORT_CLIENT, PORT_SERVER,
 		bytes([
 			OP_REQUEST, HTYPE_ETH, eth.MAC_LEN,
@@ -46,9 +62,9 @@ def gen_dhcp(xid, secs, opt_type, client_ip):
 			(xid) & 0xff,
 			secs >> 8,
 			secs & 0xff,
-			FLAGS_BROADCAST, 0
+			FLAGS_BROADCAST if client_ip == ip.IPADDR_ZERO else 0, 0
 		]) +
-		ip.IPADDR_ZERO + # client ip
+		(client_ip if renew else ip.IPADDR_ZERO) +
 		ip.IPADDR_ZERO +
 		ip.IPADDR_ZERO +
 		ip.IPADDR_ZERO +
@@ -61,17 +77,7 @@ def gen_dhcp(xid, secs, opt_type, client_ip):
 			OPT_TYPE_LEN,
 			opt_type,
 		]) +
-		((bytes([
-				OPT_LIST_CODE,
-				len(opt_list)
-			]) + opt_list)
-			if client_ip == ip.IPADDR_ZERO else
-			bytes([
-				OPT_REQUESTED_IP,
-				ip.IPADDR_LEN
-			]) +
-			client_ip
-		) +
+		extra_options +
 		bytes([
 			OPT_END
 		])
@@ -80,8 +86,9 @@ def gen_dhcp(xid, secs, opt_type, client_ip):
 def gen_dhcp_discover(xid, secs):
 	return gen_dhcp(xid, secs, OPT_TYPE_DISCOVER, ip.IPADDR_ZERO)
 
-def gen_dhcp_request(xid, secs, client_ip):
-	return gen_dhcp(xid, secs, OPT_TYPE_REQUEST, client_ip)
+def gen_dhcp_request(xid, secs, client_ip, renew=False, dhcp_server_ip=ip.IPADDR_BROADCAST):
+	return gen_dhcp(xid, secs, OPT_TYPE_REQUEST, client_ip,
+		renew, dhcp_server_ip)
 
 def get_op(packet):
 	return packet[0]

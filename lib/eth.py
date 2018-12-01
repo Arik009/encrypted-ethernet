@@ -51,3 +51,6 @@ def sendeth(frame, interface = "enp2s0"):
 
 def get_ethertype(frame):
 	return frame[2*MAC_LEN:2*MAC_LEN+2]
+
+def get_src_mac(frame):
+	return frame[MAC_LEN:2*MAC_LEN]
