@@ -271,7 +271,7 @@ wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
-	.rxd(uart_txd), .out(uart_rx_out), .outclk(uart_rx_outclk));
+	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 wire uart_rx_active;
 // reset downstream modules if nothing is received for 1ms
 pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
