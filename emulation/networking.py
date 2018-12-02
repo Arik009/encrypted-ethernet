@@ -69,7 +69,7 @@ while True:
 		eth.ETHERTYPE_IP,
 		dhcp.gen_dhcp_request(dhcp_xid,
 			int(time.time() - dhcp_tx_start), client_ip,
-			False)
+			False, dhcp_server_ip)
 	))
 	start_time = time.time()
 	success = False
@@ -109,7 +109,8 @@ while True:
 		eth.ETHERTYPE_IP,
 		dhcp.gen_dhcp_request(dhcp_xid,
 			int(time.time() - dhcp_tx_start), client_ip,
-			True)
+			# just re-request since renew doesn't work?
+			False, dhcp_server_ip)
 	))
 	start_time = time.time()
 	success = False

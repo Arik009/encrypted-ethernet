@@ -185,6 +185,9 @@ packet_synth_rom_driver psr_inst(
 
 ////// AES
 
+wire [BLOCK_LEN-1:0] aes_key;
+assign aes_key = {KEY[8+:BLOCK_LEN-8], SW[8+:8]};
+
 wire aes_rst, aes_inclk, aes_outclk;
 wire [BYTE_LEN-1:0] aes_in, aes_out;
 wire aes_decr_select;
@@ -489,7 +492,8 @@ blinker blinker_inst(
 	.enable(1), .out(blink));
 
 assign LED = {
-	SW[15:2],
+	SW[15:3],
+	config_transmit,
 	blink,
 	rst
 };

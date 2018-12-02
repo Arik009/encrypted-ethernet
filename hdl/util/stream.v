@@ -39,7 +39,7 @@ module stream_unpack #(
 	parameter S_LEN = 1,
 	parameter L_LEN = 2) (
 	input clk, rst, inclk, input [L_LEN-1:0] in, input in_done,
-	output outclk, output [S_LEN:0] out,
+	output outclk, output [S_LEN-1:0] out,
 	// done is pulsed after done_in when buffer has been cleared
 	output rdy, done);
 
