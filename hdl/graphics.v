@@ -19,7 +19,7 @@ delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) vsync_delay(
 delay #(.DELAY_LEN(VIDEO_CACHE_RAM_LATENCY)) blank_delay(
 	.clk(clk), .rst(rst), .in(blank), .out(blank_delayed));
 
-wire [4:0] image_x, image_y;
+wire [6:0] image_x, image_y;
 assign image_x = vga_x[8:2];
 assign image_y = vga_y[8:2];
 assign ram_readclk = !blank && !vga_x[9] && !vga_y[9];
