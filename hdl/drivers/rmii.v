@@ -3,7 +3,7 @@ module rmii_driver(
 	inout crsdv_in,
 	inout [1:0] rxd_in,
 	output rxerr, intn,
-	output reg rstn = 1,
+	output reg rstn = 0,
 	output reg [1:0] out = 0,
 	// done is pulsed at the same time as the last dibit of a full packet
 	output reg outclk = 0, output done);
@@ -13,11 +13,11 @@ module rmii_driver(
 // should have 25ms delay from power supply up before
 // nRST assertion, but we assume that power supplies have
 // long been set up already
-// according to spec: need 200ns setup before nRST deassertion
-// and 100ns hold time afterwards
-localparam RESET_SETUP = 10;
-localparam RESET_HOLD = 5;
-localparam RESET_SEQUENCE_LEN = RESET_SETUP + RESET_HOLD;
+// according to spec: need 100us before nRST deassertion
+// and 800ns afterwards
+localparam RESET_BEFORE = 5000;
+localparam RESET_AFTER = 40;
+localparam RESET_SEQUENCE_LEN = RESET_BEFORE + RESET_AFTER;
 reg [clog2(RESET_SEQUENCE_LEN)-1:0] rst_cnt = 0;
 wire rst_done;
 assign rst_done = rst_cnt == RESET_SEQUENCE_LEN;
@@ -72,7 +72,7 @@ always @(posedge clk) begin
 		out <= 0;
 		outclk <= 0;
 	end else if (~rst_done) begin
-		if (rst_cnt == RESET_SETUP - 1)
+		if (rst_cnt == RESET_BEFORE - 1)
 			rstn <= 1;
 		rst_cnt <= rst_cnt + 1;
 	end else case(state)

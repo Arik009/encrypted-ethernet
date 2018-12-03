@@ -502,9 +502,9 @@ assign LED = {
 
 assign hex_display_data = {
 	pb_queue_head[3:0],
-	ram_waddr[11:0],
+	vram_waddr[13:6],
 	pb_queue_tail[3:0],
-	ram_raddr[11:0]
+	vram_raddr[13:6]
 };
 
 assign JB = {

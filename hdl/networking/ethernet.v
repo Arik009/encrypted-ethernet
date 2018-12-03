@@ -231,7 +231,8 @@ module eth_rx(
 wire dtb_outclk, dtb_done;
 wire [BYTE_LEN-1:0] dtb_out;
 dibits_to_bytes dtb_inst(
-	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.clk(clk), .rst(rst || !inclk),
+	.inclk(inclk), .in(in), .in_done(in_done),
 	.outclk(dtb_outclk), .out(dtb_out), .done(dtb_done));
 
 localparam STATE_MAC_DST = 0;
