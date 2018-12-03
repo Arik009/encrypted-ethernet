@@ -1,6 +1,16 @@
-module rng();
+// generates a new random number every 0.01s, not very good quality
+module rng (
+	input clk, rst,
+	input acl_miso,
+	output acl_mosi, acl_csn);
 
+localparam COORD_WIDTH = 16;
+
+wire adxl362_outclk;
+wire [COORD_WIDTH-1:0] adxl362_x, adxl362_y;
 adxl362_reader adxl362_reader_inst(
+	.clk(clk), .rst(rst), .miso(acl_miso), .mosi(acl_mosi),
+	.csn(acl_csn), .outclk(adxl362_outclk), .x(adxl362_x), .y(adxl362_y));
 
 endmodule
 
@@ -9,8 +19,7 @@ module adxl362_reader #(
 	// this is different from the one defined in imu_reader
 	// here sample is defined as reading a single frame
 	// 100Hz = 650000 cycles per sample
-    parameter SAMPLE_PERIOD_WIDTH = 20,
-    parameter SAMPLE_PERIOD = 650000,
+	parameter SAMPLE_PERIOD = 650000,
 	parameter COORD_WIDTH = 16) (
 	input clk,
 	input rst,

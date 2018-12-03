@@ -23,12 +23,13 @@ def send_cycle(ser):
 			im = image_bytes.image_to_colors(
 				os.path.join(image_dir, fin_name),
 				IMAGE_WIDTH, IMAGE_HEIGHT)
+			# im = [a % 256 for a in list(range(128*128))]
 			for i in range(len(im)//512):
 				num_written = ser.write(
 					eth.gen_eth_fgp_payload(i*512, im[i*512:(i+1)*512]))
-				ser.flush()
-				print("%d bytes written" % num_written)
-				sleep(0.02)
+			ser.flush()
+			# print("%d bytes written" % num_written)
+			# sleep(0.02)
 		cnt = cnt + 1
 
 fpga_serial.do_serial(send_cycle)
