@@ -194,7 +194,7 @@ wire aes_decr_select;
 assign aes_decr_select = !config_transmit;
 aes_combined_bytes aes_inst(
 	.clk(clk), .rst(rst || aes_rst),
-	.inclk(aes_inclk), .in(aes_in), .key(KEY),
+	.inclk(aes_inclk), .in(aes_in), .key(aes_key),
 	.outclk(aes_outclk), .out(aes_out), .decr_select(aes_decr_select));
 
 wire aes_encr_rst, aes_decr_rst;
@@ -312,10 +312,12 @@ assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
 assign uart_ram_we = encr_fgp_outclk;
 assign uart_ram_win = encr_fgp_out;
 always @(posedge clk) begin
-	if (uart_rx_downstream_rst) begin
-		uart_rx_cnt <= 0;
+	if (rst) begin
 		pb_queue_tail <= 0;
-	end else if (encr_fgp_outclk) begin
+		uart_rx_cnt <= 0;
+	end else if (uart_rx_downstream_rst)
+		uart_rx_cnt <= 0;
+	else if (encr_fgp_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin
 			uart_rx_cnt <= 0;
 			// if queue overflows, drop the current packet
@@ -499,14 +501,17 @@ assign LED = {
 };
 
 assign hex_display_data = {
-	2'b0, pb_queue_head[1:0],
-	ram_waddr,
-	2'b0, pb_queue_tail[1:0],
-	ram_raddr
+	pb_queue_head[3:0],
+	ram_waddr[11:0],
+	pb_queue_tail[3:0],
+	ram_raddr[11:0]
 };
 
 assign JB = {
-	8'h0
+	eth_tx_done,
+	eth_tx_start,
+	eth_tx_active,
+	5'h0
 };
 
 endmodule
@@ -568,7 +573,7 @@ assign JB[0] = jb_out;
 
 wire tx_clk;
 clock_divider #(.PULSE_PERIOD(128)) cd_inst(
-	.clk(clk), .start(0), .en(1), .out(block_clk));
+	.clk(clk), .rst(1'b0), .en(1'b1), .out(block_clk));
 
 always @(posedge clk) begin
 	aes_in <= {aes_in[126:0], SW[0]};

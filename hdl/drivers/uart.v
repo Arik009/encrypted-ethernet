@@ -107,10 +107,6 @@ module uart_tx_fast_driver #(
 
 `include "params.vh"
 
-wire tx_clk;
-clock_divider #(.PULSE_PERIOD(CYCLES_PER_BIT)) tx_clock_divider(
-	.clk(clk_120mhz), .start(1'b0), .en(1'b1), .out(tx_clk));
-
 // two extra bits for start/stop bits
 reg [BYTE_LEN+2-1:0] curr_byte_shifted = ~0;
 assign txd = curr_byte_shifted[0];
@@ -125,6 +121,11 @@ wire rst_120mhz;
 reset_stream_fifo reset_fifo_inst(
 	.clka(clk), .clkb(clk_120mhz),
 	.rsta(rst), .rstb(rst_120mhz));
+
+wire tx_clk;
+clock_divider #(.PULSE_PERIOD(CYCLES_PER_BIT)) tx_clock_divider(
+	.clk(clk_120mhz), .rst(rst_120mhz), .en(1'b1), .out(tx_clk));
+
 wire fifo_empty, fifo_full, fifo_rden;
 assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
 byte_stream_fifo data_fifo(

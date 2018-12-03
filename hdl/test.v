@@ -750,19 +750,22 @@ assign eth_ram_out = config_transmit ? ram_out : 0;
 
 ////// AES
 
+wire [BLOCK_LEN-1:0] aes_key;
+assign aes_key = {KEY[8+:BLOCK_LEN-8], 8'b0};
+
 wire aes_encr_rst, aes_decr_rst;
 wire aes_encr_inclk, aes_decr_inclk, aes_encr_outclk, aes_decr_outclk;
 wire [BYTE_LEN-1:0] aes_encr_in, aes_decr_in, aes_encr_out, aes_decr_out;
 aes_combined_bytes aes_encr_inst(
 	.clk(clk), .rst(rst || aes_encr_rst),
-	.inclk(aes_encr_inclk), .in(aes_encr_in), .key(KEY),
+	.inclk(aes_encr_inclk), .in(aes_encr_in), .key(aes_key),
 	.outclk(aes_encr_outclk), .out(aes_encr_out),
-	.decr_select(0));
+	.decr_select(1'b0));
 aes_combined_bytes aes_decr_inst(
 	.clk(clk), .rst(rst || aes_decr_rst),
-	.inclk(aes_decr_inclk), .in(aes_decr_in), .key(KEY),
+	.inclk(aes_decr_inclk), .in(aes_decr_in), .key(aes_key),
 	.outclk(aes_decr_outclk), .out(aes_decr_out),
-	.decr_select(1));
+	.decr_select(1'b1));
 
 ////// UART TX <= ROM
 
@@ -828,10 +831,12 @@ assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
 assign uart_ram_we = encr_fgp_outclk;
 assign uart_ram_win = encr_fgp_out;
 always @(posedge clk) begin
-	if (uart_rx_downstream_rst) begin
-		uart_rx_cnt <= 0;
+	if (rst) begin
 		pb_queue_tail <= 0;
-	end else if (encr_fgp_outclk) begin
+		uart_rx_cnt <= 0;
+	end else if (uart_rx_downstream_rst)
+		uart_rx_cnt <= 0;
+	else if (encr_fgp_outclk) begin
 		if (uart_rx_cnt == FGP_LEN-1) begin
 			uart_rx_cnt <= 0;
 			// if queue overflows, drop the current packet

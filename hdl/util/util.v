@@ -122,15 +122,15 @@ endmodule
 module clock_divider #(
 	parameter PULSE_PERIOD = 4) (
 	// only pulses if en is asserted
-	input clk, start, en, output out);
+	input clk, rst, en, output out);
 
 `include "util.vh"
 
 reg [clog2(PULSE_PERIOD)-1:0] cnt = 0;
-assign out = en && cnt == 0;
+assign out = !rst && en && cnt == 0;
 
 always @(posedge clk) begin
-	if (start)
+	if (rst)
 		cnt <= 0;
 	else if (cnt == PULSE_PERIOD-1)
 		cnt <= 0;
