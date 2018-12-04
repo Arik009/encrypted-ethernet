@@ -2,8 +2,7 @@
 // simple invented-here DMA protocol used to transmit graphics information
 // sits just above the ethernet layer
 // should be encrypted in actual packet
-// the padding makes it a multiple of 128, for AES
-// format: [ offset (1 byte) | padding (127 bytes) | data (768 bytes) ]
+// format: [ offset (1 byte) | data (768 bytes) ]
 // 768 bytes = 512 colors
 
 // produces outputs with a latency of LATENCY
@@ -47,9 +46,8 @@ assign upstream_readclk = (state == STATE_DATA) && readclk;
 assign outclk_pd =
 	(state == STATE_OFFSET) &&
 	readclk;
-// if we're not in offset, then we're in padding
 assign out_pd =
-	(state == STATE_OFFSET) ? offset : 0;
+	(state == STATE_OFFSET) ? offset_buf : 0;
 
 always @(posedge clk) begin
 	if (rst || start) begin

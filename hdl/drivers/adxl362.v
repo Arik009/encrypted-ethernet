@@ -1,4 +1,5 @@
 // generates a new random number every 0.01s, not very good quality
+// not yet fully implemented
 module rng (
 	input clk, rst,
 	input acl_miso,
@@ -68,7 +69,7 @@ always @(posedge clk) begin
 		state <= STATE_IDLE;
 		outclk <= 0;
 		csn <= 0;
-	else case (state)
+	end else case (state)
 	STATE_IDLE: begin
 		if (sample_clk) begin
 			instruction_buffer <= {INSTRUCTION_READ, DATA_REGISTERS_START};

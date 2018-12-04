@@ -174,7 +174,7 @@ localparam STATE_GAP = 4;
 reg [2:0] state = STATE_IDLE;
 reg [5:0] cnt;
 // sfd indicates that we have reached the end of the preamble
-wire sfd, crc_done;
+wire sfd, crc_done, gap_done;
 // multiply by 4 since we're measuring in dibits
 assign sfd = (state == STATE_PREAMBLE) && (cnt == ETH_PREAMBLE_LEN*4-1);
 assign crc_done = (state == STATE_CRC) && (cnt == ETH_CRC_LEN*4-1);
@@ -223,17 +223,26 @@ module eth_rx(
 	output outclk, output [BYTE_LEN-1:0] out,
 	output ethertype_outclk,
 	output [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] ethertype_out,
-	output err);
+	output err, done);
 
 `include "params.vh"
 `include "networking.vh"
 
+wire frame_rst;
+// reset everything not just on rst but also when the flow of data breaks
+assign frame_rst = rst || !inclk;
+
 wire dtb_outclk, dtb_done;
 wire [BYTE_LEN-1:0] dtb_out;
 dibits_to_bytes dtb_inst(
-	.clk(clk), .rst(rst || !inclk),
+	.clk(clk), .rst(frame_rst),
 	.inclk(inclk), .in(in), .in_done(in_done),
 	.outclk(dtb_outclk), .out(dtb_out), .done(dtb_done));
+wire crc_shift;
+wire [31:0] crc_out;
+crc32 crc32_inst(
+	.clk(clk), .rst(frame_rst), .shift(crc_shift),
+	.inclk(inclk), .in(in), .out(crc_out));
 
 localparam STATE_MAC_DST = 0;
 localparam STATE_MAC_SRC = 1;
@@ -246,25 +255,34 @@ reg [2:0] state = STATE_MAC_DST;
 reg [2:0] cnt = 0;
 reg idle = 1;
 assign err = (!idle && !inclk) ||
-	(state == STATE_DONE && inclk && in != 2'b00);
+	(state == STATE_DONE && inclk && in != 2'b00) ||
+	(state == STATE_CRC && inclk && in != crc_out[1:0]);
 
 assign out = dtb_out;
 assign outclk = state == STATE_PAYLOAD && dtb_outclk;
 wire ethertype_done;
 assign ethertype_done =
 	state == STATE_ETHERTYPE && cnt == ETH_ETHERTYPE_LEN-1;
+wire crc_done;
+assign crc_done =
+	state == STATE_CRC && cnt == ETH_CRC_LEN-1;
+assign done = crc_done;
 
 // shift in ethertype
 reg [(ETH_ETHERTYPE_LEN-1)*BYTE_LEN-1:0] ethertype_shifted;
 assign ethertype_outclk = dtb_outclk && ethertype_done;
 assign ethertype_out = {ethertype_shifted, dtb_out};
 
+assign crc_shift = inclk && state == STATE_CRC;
+
 always @(posedge clk) begin
-	if (rst || !inclk) begin
+	if (frame_rst) begin
 		state <= STATE_MAC_DST;
 		cnt <= 0;
 		idle <= 1;
-	end else if (dtb_outclk) begin
+	end else if (err)
+		state <= STATE_DONE;
+	else if (dtb_outclk) begin
 		if (state == STATE_MAC_DST && cnt == ETH_MAC_LEN-1) begin
 			state <= STATE_MAC_SRC;
 			cnt <= 0;
@@ -276,7 +294,7 @@ always @(posedge clk) begin
 		else if (state == STATE_PAYLOAD && downstream_done) begin
 			state <= STATE_CRC;
 			cnt <= 0;
-		end else if (state == STATE_CRC && cnt == ETH_CRC_LEN-1) begin
+		end else if (crc_done) begin
 			state <= STATE_DONE;
 			idle <= 1;
 		end else if (state != STATE_DONE) begin

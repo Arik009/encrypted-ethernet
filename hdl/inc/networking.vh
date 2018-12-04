@@ -7,8 +7,19 @@ localparam ETH_MAC_LEN = 6;
 localparam ETH_ETHERTYPE_LEN = 2;
 
 localparam ETHERTYPE_FGP = 16'hca11;
+localparam ETHERTYPE_FFCP = 16'hca12;
 
 localparam FGP_OFFSET_LEN = 1;
 localparam FGP_DATA_LEN = 768;
 localparam FGP_DATA_LEN_COLORS = FGP_DATA_LEN * BYTE_LEN / COLOR_LEN;
 localparam FGP_LEN = FGP_OFFSET_LEN + FGP_DATA_LEN;
+
+// in bits
+localparam FFCP_TYPE_LEN = 2;
+localparam FFCP_INDEX_LEN = 6;
+// back to bytes
+localparam FFCP_METADATA_LEN = 1;
+localparam FFCP_DATA_LEN = FGP_LEN;
+localparam FFCP_LEN = FFCP_METADATA_LEN + FFCP_DATA_LEN;
+
+localparam FFCP_WINDOW_LEN = 4;
