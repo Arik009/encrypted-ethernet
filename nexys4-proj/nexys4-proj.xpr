@@ -33,20 +33,20 @@
     <Option Name="DSAVendor" Val="xilinx"/>
     <Option Name="DSABoardId" Val="nexys4_ddr"/>
     <Option Name="DSANumComputeUnits" Val="60"/>
-    <Option Name="WTXSimLaunchSim" Val="542"/>
+    <Option Name="WTXSimLaunchSim" Val="556"/>
     <Option Name="WTModelSimLaunchSim" Val="0"/>
     <Option Name="WTQuestaLaunchSim" Val="0"/>
     <Option Name="WTIesLaunchSim" Val="0"/>
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="46"/>
-    <Option Name="WTModelSimExportSim" Val="46"/>
-    <Option Name="WTQuestaExportSim" Val="46"/>
-    <Option Name="WTIesExportSim" Val="46"/>
-    <Option Name="WTVcsExportSim" Val="46"/>
-    <Option Name="WTRivieraExportSim" Val="45"/>
-    <Option Name="WTActivehdlExportSim" Val="45"/>
+    <Option Name="WTXSimExportSim" Val="47"/>
+    <Option Name="WTModelSimExportSim" Val="47"/>
+    <Option Name="WTQuestaExportSim" Val="47"/>
+    <Option Name="WTIesExportSim" Val="47"/>
+    <Option Name="WTVcsExportSim" Val="47"/>
+    <Option Name="WTRivieraExportSim" Val="46"/>
+    <Option Name="WTActivehdlExportSim" Val="46"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -274,37 +274,7 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/test_packet_synth_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_main_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_fast_uart_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_packet_parse_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
       <File Path="$PPRDIR/test_daisy_chain_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_ddr2_ram_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_ipv4_checksum_behav.wcfg">
         <FileInfo>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
@@ -351,19 +321,9 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/test_ffcp_rx_server_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/test_ffcp_tx_server_behav.wcfg">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
       <Config>
         <Option Name="DesignMode" Val="RTL"/>
-        <Option Name="TopModule" Val="test_ffcp_tx_server"/>
+        <Option Name="TopModule" Val="test_daisy_chain"/>
         <Option Name="TopLib" Val="xil_defaultlib"/>
         <Option Name="TransportPathDelay" Val="0"/>
         <Option Name="TransportIntDelay" Val="0"/>
@@ -383,6 +343,7 @@
         <Option Name="XSimWcfgFile" Val="$PPRDIR/test_ipv4_checksum_behav.wcfg"/>
         <Option Name="XSimWcfgFile" Val="$PPRDIR/test_ffcp_rx_server_behav.wcfg"/>
         <Option Name="XSimWcfgFile" Val="$PPRDIR/test_ffcp_tx_server_behav.wcfg"/>
+        <Option Name="XSimWcfgFile" Val="$PPRDIR/test_daisy_chain_behav.wcfg"/>
         <Option Name="NLNetlistMode" Val="funcsim"/>
       </Config>
     </FileSet>
@@ -524,7 +485,9 @@
     </Run>
     <Run Id="packet_synth_rom_synth_1" Type="Ft3:Synth" SrcSet="packet_synth_rom" Part="xc7a100tcsg324-1" ConstrsSet="packet_synth_rom" Description="Vivado Synthesis Defaults" WriteIncrSynthDcp="false" Dir="$PRUNDIR/packet_synth_rom_synth_1" IncludeInArchive="true">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2018"/>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2018">
+          <Desc>Vivado Synthesis Defaults</Desc>
+        </StratHandle>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -614,7 +577,9 @@
     </Run>
     <Run Id="packet_synth_rom_impl_1" Type="Ft2:EntireDesign" Part="xc7a100tcsg324-1" ConstrsSet="packet_synth_rom" Description="Default settings for Implementation." WriteIncrSynthDcp="false" SynthRun="packet_synth_rom_synth_1" IncludeInArchive="false" GenFullBitstream="true">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2018"/>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2018">
+          <Desc>Default settings for Implementation.</Desc>
+        </StratHandle>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>

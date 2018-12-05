@@ -74,7 +74,7 @@ always @(posedge clk) begin
 		end else if (state == STATE_MAC_SRC && cnt == ETH_MAC_LEN-1) begin
 			cnt <= 0;
 			state <= STATE_ETHERTYPE;
-			ram_raddr <= ETHERTYPE_FGP_OFF;
+			ram_raddr <= ETHERTYPE_FFCP_OFF;
 		end else if (state == STATE_ETHERTYPE &&
 				cnt == ETH_ETHERTYPE_LEN-1) begin
 			state <= STATE_PAYLOAD;

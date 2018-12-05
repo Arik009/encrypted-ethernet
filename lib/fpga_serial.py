@@ -33,6 +33,7 @@ def do_serial(callback):
 		parity=serial.PARITY_NONE, 
 		stopbits=serial.STOPBITS_ONE, 
 		bytesize=serial.EIGHTBITS,
+		rtscts=True,
 		timeout=0) as ser:
 
 		print(ser)

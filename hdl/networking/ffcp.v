@@ -5,13 +5,14 @@
 // The index works like the sequence number in TCP
 // FFCP's flow control is a very simplified version of TCP's, where
 // the window size is fixed and data flows in only one direction
+// FGP data is omitted in ack
 
 module ffcp_tx #(
 	parameter LATENCY = PACKET_SYNTH_ROM_LATENCY) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
 	input [FFCP_TYPE_LEN-1:0] ffcp_type,
-	input [FFCP_INDEX_LEN:0] ffcp_index,
+	input [FFCP_INDEX_LEN-1:0] ffcp_index,
 	input readclk,
 	output outclk, output [BYTE_LEN-1:0] out,
 	output upstream_readclk, done);
@@ -19,6 +20,10 @@ module ffcp_tx #(
 `include "networking.vh"
 
 reg [BYTE_LEN-1:0] metadata_buf;
+wire [FFCP_TYPE_LEN-1:0] metadata_buf_type;
+assign metadata_buf_type = metadata_buf[FFCP_INDEX_LEN+:FFCP_TYPE_LEN];
+wire is_ack;
+assign is_ack = metadata_buf_type == FFCP_TYPE_ACK;
 
 wire outclk_pd;
 wire [BYTE_LEN-1:0] out_pd, out_premux;
@@ -33,13 +38,17 @@ delay #(.DELAY_LEN(LATENCY)) outclk_delay(
 delay #(.DELAY_LEN(LATENCY),
 	.DATA_WIDTH(BYTE_LEN)) out_delay(
 	.clk(clk), .rst(rst || start), .in(out_pd), .out(out_premux));
-assign done = in_done;
 
 localparam STATE_METADATA = 0;
 localparam STATE_DATA = 1;
 
 reg [0:0] state = STATE_METADATA;
 reg [9:0] cnt = 0;
+
+wire metadata_done;
+assign metadata_done =
+	state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1;
+assign done = in_done || (metadata_done && is_ack);
 
 assign upstream_readclk = (state == STATE_DATA) && readclk;
 assign outclk_pd = (state == STATE_METADATA) && readclk;
@@ -208,6 +217,7 @@ module ffcp_tx_server(
 	output outclk, out_syn,
 	output [FFCP_INDEX_LEN-1:0] out_index,
 	output [clog2(PB_QUEUE_LEN)-1:0] out_buf_pos,
+	// the pb outputs are the interface to ffcp_tx_queue
 	output outclk_pb,
 	output [clog2(PB_QUEUE_LEN)-1:0] out_pb_head);
 

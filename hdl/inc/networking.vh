@@ -24,6 +24,10 @@ localparam FFCP_METADATA_LEN = 1;
 localparam FFCP_DATA_LEN = FGP_LEN;
 localparam FFCP_LEN = FFCP_METADATA_LEN + FFCP_DATA_LEN;
 
+localparam FFCP_TYPE_SYN = 0;
+localparam FFCP_TYPE_MSG = 1;
+localparam FFCP_TYPE_ACK = 2;
+
 localparam FFCP_BUFFER_LEN = 2**FFCP_INDEX_LEN;
 localparam FFCP_WINDOW_LEN = 4;
 

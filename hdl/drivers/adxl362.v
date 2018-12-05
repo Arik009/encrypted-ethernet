@@ -31,21 +31,21 @@ module adxl362_reader #(
 	output signed [COORD_WIDTH-1:0] x, y);
 
 // according to the adxl362 spec
-parameter INSTRUCTION_READ = 8'h0B;
-parameter DATA_REGISTERS_START = 8'h0E;
+localparam INSTRUCTION_READ = 8'h0B;
+localparam DATA_REGISTERS_START = 8'h0E;
 
 wire sample_clk;
 clock_divider #(.PULSE_PERIOD(SAMPLE_PERIOD)) clock_div_inst (
 	.clk(clk), .rst(rst), .en(1'b1), .out(sample_clk));
 
 // order of operation: send 16 bits of instruction, read 32 bits of data
-parameter STATE_IDLE = 2'b00;
-parameter STATE_SENDING_INSTRUCTION = 2'b01;
-parameter STATE_RECEIVING = 2'b11;
+localparam STATE_IDLE = 2'b00;
+localparam STATE_SENDING_INSTRUCTION = 2'b01;
+localparam STATE_RECEIVING = 2'b11;
 
-parameter INSTRUCTION_WIDTH = 16;
-parameter FRAME_LENGTH_LOG2 = 5;
-parameter FRAME_LENGTH = 32;
+localparam INSTRUCTION_WIDTH = 16;
+localparam FRAME_LENGTH_LOG2 = 5;
+localparam FRAME_LENGTH = 32;
 
 reg [1:0] state = STATE_IDLE;
 

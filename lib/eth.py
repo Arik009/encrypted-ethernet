@@ -10,6 +10,7 @@ MAC_BROADCAST = bytes.fromhex('FFFFFFFFFFFF')
 
 ETHERTYPE_LEN = 2
 ETHERTYPE_FGP = bytes.fromhex('ca11')
+ETHERTYPE_FFCP = bytes.fromhex('ca12')
 ETHERTYPE_IP = bytes.fromhex('0800')
 ETHERTYPE_ARP = bytes.fromhex('0806')
 

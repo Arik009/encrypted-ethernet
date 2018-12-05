@@ -70,11 +70,11 @@ clk_wiz_0 clk_wiz_inst(
 
 wire sw0, sw1, sw2;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
-	.clk(clk), .rst(0), .in(SW[0]), .out(sw0));
+	.clk(clk), .rst(1'b0), .in(SW[0]), .out(sw0));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
-	.clk(clk), .rst(0), .in(SW[1]), .out(sw1));
+	.clk(clk), .rst(1'b0), .in(SW[1]), .out(sw1));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw2_sync(
-	.clk(clk), .rst(0), .in(SW[2]), .out(sw2));
+	.clk(clk), .rst(1'b0), .in(SW[2]), .out(sw2));
 
 wire config_transmit;
 assign config_transmit = sw1;
@@ -90,8 +90,10 @@ assign config_change_reset = sw1 != prev_sw1;
 
 wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
-pulse_extender reset_pe(
-	.clk(clk), .rst(0), .in(sw0 || config_change_reset), .out(rst));
+localparam TESTING = 1;
+localparam RESET_TIMEOUT = TESTING ? 1 : 5000000;
+pulse_extender #(.EXTEND_LEN(RESET_TIMEOUT)) reset_pe(
+	.clk(clk), .rst(1'b0), .in(sw0 || config_change_reset), .out(rst));
 
 ////// HEX DISPLAY
 
@@ -215,19 +217,19 @@ assign aes_decr_out = aes_decr_select ? aes_out : 0;
 wire uart_ram_rst, uart_ram_we, uart_ram_readclk, uart_ram_outclk;
 wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr, uart_ram_raddr;
 wire [BYTE_LEN-1:0] uart_ram_win, uart_ram_out;
-wire eth_ram_rst, eth_ram_we, eth_ram_readclk, eth_ram_outclk;
-wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr, eth_ram_raddr;
-wire [BYTE_LEN-1:0] eth_ram_win, eth_ram_out;
-assign ram_rst = config_transmit ? uart_ram_rst : eth_ram_rst;
+wire ffcp_ram_rst, eth_ram_we, ffcp_ram_readclk, ffcp_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr, ffcp_ram_raddr;
+wire [BYTE_LEN-1:0] eth_ram_win, ffcp_ram_out;
+assign ram_rst = config_transmit ? ffcp_ram_rst : uart_ram_rst;
 assign ram_we = config_transmit ? uart_ram_we : eth_ram_we;
 assign ram_waddr = config_transmit ? uart_ram_waddr : eth_ram_waddr;
 assign ram_win = config_transmit ? uart_ram_win : eth_ram_win;
-assign ram_readclk = config_transmit ? eth_ram_readclk : uart_ram_readclk;
-assign ram_raddr = config_transmit ? eth_ram_raddr : uart_ram_raddr;
+assign ram_readclk = config_transmit ? ffcp_ram_readclk : uart_ram_readclk;
+assign ram_raddr = config_transmit ? ffcp_ram_raddr : uart_ram_raddr;
 assign uart_ram_outclk = config_transmit ? 0 : ram_outclk;
-assign eth_ram_outclk = config_transmit ? ram_outclk : 0;
+assign ffcp_ram_outclk = config_transmit ? ram_outclk : 0;
 assign uart_ram_out = ram_out;
-assign eth_ram_out = ram_out;
+assign ffcp_ram_out = ram_out;
 
 wire uart_vram_rst;
 wire vga_vram_readclk, vga_vram_outclk;
@@ -269,10 +271,175 @@ delay eth_txen_delay(
 delay #(.DATA_WIDTH(2)) eth_txd_delay(
 	.clk(clk), .rst(rst), .in(eth_txd), .out(ETH_TXD));
 
+////// ETHERNET TX <= RAM
+
+wire ffcp_tx_start;
+wire [FFCP_TYPE_LEN-1:0] ffcp_tx_type;
+wire [FFCP_INDEX_LEN-1:0] ffcp_tx_index;
+
+wire [clog2(RAM_SIZE)-1:0] ffcp_tx_sfm_read_start;
+wire ffcp_tx_sfm_readclk;
+wire ffcp_tx_sfm_outclk, ffcp_tx_sfm_done;
+wire [BYTE_LEN-1:0] ffcp_tx_sfm_out;
+assign ffcp_ram_rst = ffcp_tx_start;
+stream_from_memory #(.RAM_SIZE(RAM_SIZE),
+	.RAM_READ_LATENCY(PACKET_BUFFER_READ_LATENCY)) ffcp_tx_sfm_inst(
+	.clk(clk), .rst(rst), .start(ffcp_tx_start),
+	.read_start(ffcp_tx_sfm_read_start),
+	.read_end(ffcp_tx_sfm_read_start + FGP_LEN),
+	.readclk(ffcp_tx_sfm_readclk),
+	.ram_outclk(ffcp_ram_outclk), .ram_out(ffcp_ram_out),
+	.ram_readclk(ffcp_ram_readclk), .ram_raddr(ffcp_ram_raddr),
+	.outclk(ffcp_tx_sfm_outclk), .out(ffcp_tx_sfm_out),
+	.done(ffcp_tx_sfm_done));
+wire ffcp_tx_readclk, ffcp_tx_outclk, ffcp_tx_done;
+wire [BYTE_LEN-1:0] ffcp_tx_out;
+ffcp_tx ffcp_tx_inst(
+	.clk(clk), .rst(rst), .start(ffcp_tx_start),
+	.inclk(ffcp_tx_sfm_outclk), .in(ffcp_tx_sfm_out),
+	.in_done(ffcp_tx_sfm_done),
+	.ffcp_type(ffcp_tx_type), .ffcp_index(ffcp_tx_index),
+	.readclk(ffcp_tx_readclk),
+	.outclk(ffcp_tx_outclk), .out(ffcp_tx_out),
+	.upstream_readclk(ffcp_tx_sfm_readclk), .done(ffcp_tx_done));
+
+wire eth_tx_done;
+eth_tx eth_tx_inst(
+	.clk(clk), .rst(rst), .start(ffcp_tx_start),
+	.in_done(ffcp_tx_done),
+	.inclk(ffcp_tx_outclk), .in(ffcp_tx_out),
+	.ram_outclk(rom_outclk), .ram_out(rom_out),
+	.ram_readclk(rom_readclk), .ram_raddr(rom_raddr),
+	.outclk(eth_txen), .out(eth_txd),
+	.upstream_readclk(ffcp_tx_readclk), .done(eth_tx_done));
+
+////// ETHERNET RX => VRAM
+
+wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err;
+wire [BYTE_LEN-1:0] eth_rx_out;
+wire eth_rx_ethertype_outclk;
+wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
+eth_rx eth_rx_inst(
+	.clk(clk), .rst(rst),
+	.inclk(rmii_outclk), .in(rmii_out),
+	.in_done(rmii_done),
+	.downstream_done(eth_rx_downstream_done),
+	.outclk(eth_rx_outclk), .out(eth_rx_out),
+	.ethertype_outclk(eth_rx_ethertype_outclk),
+	.ethertype_out(eth_rx_ethertype_out),
+	.err(eth_rx_err));
+wire eth_rx_downstream_rst;
+assign eth_rx_downstream_rst = rst || eth_rx_err;
+
+reg ffcp_rx_en = 0;
+always @(posedge clk) begin
+	if (eth_rx_downstream_rst)
+		ffcp_rx_en <= 0;
+	else if (eth_rx_ethertype_outclk)
+		ffcp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FFCP;
+end
+
+wire ffcp_rx_done;
+assign eth_rx_downstream_done = ffcp_rx_done;
+wire ffcp_rx_metadata_outclk;
+wire [FFCP_TYPE_LEN-1:0] ffcp_rx_type;
+wire [FFCP_INDEX_LEN-1:0] ffcp_rx_index;
+wire ffcp_rx_outclk;
+wire [BYTE_LEN-1:0] ffcp_rx_out;
+ffcp_rx ffcp_rx_inst(
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(eth_rx_outclk && ffcp_rx_en), .in(eth_rx_out),
+	.done(ffcp_rx_done),
+	.metadata_outclk(ffcp_rx_metadata_outclk),
+	.ffcp_type(ffcp_rx_type), .ffcp_index(ffcp_rx_index),
+	.outclk(ffcp_rx_outclk), .out(ffcp_rx_out));
+
+wire ffcp_rx_ack_outclk, ffcp_rx_syn_outclk, ffcp_rx_msg_outclk;
+assign ffcp_rx_ack_outclk =
+	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_ACK;
+assign ffcp_rx_syn_outclk =
+	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_SYN;
+assign ffcp_rx_msg_outclk =
+	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_MSG;
+
+wire fgp_rx_setoff_req;
+wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
+wire fgp_rx_outclk;
+wire [BYTE_LEN-1:0] fgp_rx_out, fgp_rx_offset_out;
+wire fgp_rx_done;
+fgp_rx fgp_rx_inst(
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(ffcp_rx_outclk && !config_transmit), .in(ffcp_rx_out),
+	.done(fgp_rx_done),
+	.offset_outclk(fgp_rx_setoff_req), .offset_out(fgp_rx_offset_out),
+	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
+assign fgp_rx_setoff_val = {fgp_rx_offset_out,
+	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
+
+assign aes_decr_rst = eth_rx_downstream_rst;
+assign aes_decr_inclk = fgp_rx_outclk;
+assign aes_decr_in = fgp_rx_out;
+
+wire fgp_btc_outclk;
+wire [COLOR_LEN-1:0] fgp_btc_out;
+bytes_to_colors fgp_btc_inst(
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.inclk(aes_decr_outclk), .in(aes_decr_out),
+	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
+stream_to_memory
+	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
+	.clk(clk), .rst(eth_rx_downstream_rst),
+	.setoff_req(fgp_rx_setoff_req),
+	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
+	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
+	.ram_we(vram_we), .ram_waddr(vram_waddr),
+	.ram_win(vram_win));
+
+////// FFCP FLOW CONTROL
+
+wire ffcp_ack_start;
+wire [FFCP_INDEX_LEN-1:0] ffcp_ack_index;
+ffcp_rx_server ffcp_rx_serv_inst(
+	.clk(clk), .rst(rst), .syn(ffcp_rx_syn_outclk),
+	.inclk(ffcp_rx_syn_outclk || ffcp_rx_msg_outclk),
+	.in_index(ffcp_rx_index),
+	.downstream_done(eth_tx_done),
+	.outclk(ffcp_ack_start), .out_index(ffcp_ack_index));
+
+wire [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail;
+wire pb_advance_tail;
+wire pb_inclk;
+wire [clog2(PB_QUEUE_LEN)-1:0] pb_in_head;
+wire pb_almost_full;
+ffcp_tx_queue ffcp_tx_queue_inst(
+	.clk(clk), .rst(rst), .advance_tail(pb_advance_tail),
+	.inclk(pb_inclk), .in_head(pb_in_head),
+	.almost_full(pb_almost_full),
+	.head(pb_head), .tail(pb_tail));
+wire ffcp_msg_start;
+wire [FFCP_INDEX_LEN-1:0] ffcp_msg_index;
+wire ffcp_tx_syn;
+wire [clog2(PB_QUEUE_LEN)-1:0] ffcp_tx_buf_pos;
+ffcp_tx_server ffcp_tx_serv_inst(
+	.clk(clk), .rst(rst),
+	.pb_head(pb_head), .pb_tail(pb_tail),
+	.downstream_done(eth_tx_done),
+	.inclk(ffcp_rx_ack_outclk), .in_index(ffcp_rx_index),
+	.outclk(ffcp_msg_start), .out_syn(ffcp_tx_syn),
+	.out_index(ffcp_msg_index),
+	.out_buf_pos(ffcp_tx_buf_pos),
+	.outclk_pb(pb_inclk), .out_pb_head(pb_in_head));
+assign ffcp_tx_sfm_read_start = {ffcp_tx_buf_pos, {clog2(FGP_LEN){1'b0}}};
+
+assign ffcp_tx_start = config_transmit ? ffcp_msg_start : ffcp_ack_start;
+assign ffcp_tx_type = config_transmit ?
+	(ffcp_tx_syn ? FFCP_TYPE_SYN : FFCP_TYPE_MSG) : FFCP_TYPE_ACK;
+assign ffcp_tx_index = config_transmit ? ffcp_msg_index : ffcp_ack_index;
+
 ////// UART RX => RAM
 
 wire uart_cts;
-assign uart_cts = sw2;
+assign uart_cts = sw2 || pb_almost_full;
 assign UART_CTS = uart_cts;
 wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
@@ -311,70 +478,16 @@ assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
 	uart_rx_fgp_offset_out : aes_encr_out;
 
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
-reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
-assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};
+assign uart_ram_waddr = {pb_tail, uart_rx_cnt};
 assign uart_ram_we = encr_fgp_outclk;
 assign uart_ram_win = encr_fgp_out;
+assign pb_advance_tail = encr_fgp_outclk && uart_rx_cnt == FGP_LEN-1;
 always @(posedge clk) begin
-	if (rst) begin
-		pb_queue_tail <= 0;
+	if (uart_rx_downstream_rst)
 		uart_rx_cnt <= 0;
-	end else if (uart_rx_downstream_rst)
-		uart_rx_cnt <= 0;
-	else if (encr_fgp_outclk) begin
-		if (uart_rx_cnt == FGP_LEN-1) begin
-			uart_rx_cnt <= 0;
-			// if queue overflows, drop the current packet
-			if (pb_queue_tail + 1 != pb_queue_head)
-				pb_queue_tail <= pb_queue_tail + 1;
-		end else
-			uart_rx_cnt <= uart_rx_cnt + 1;
-	end
+	else if (encr_fgp_outclk)
+		uart_rx_cnt <= pb_advance_tail ? 0 : uart_rx_cnt + 1;
 end
-
-////// ETHERNET TX <= RAM
-
-wire eth_tx_done;
-reg eth_tx_active = 0, eth_tx_start = 0;
-always @(posedge clk) begin
-	if (rst) begin
-		eth_tx_active <= 0;
-		eth_tx_start <= 0;
-		pb_queue_head <= 0;
-	end else if (eth_tx_start) begin
-		eth_tx_start <= 0;
-		eth_tx_active <= 1;
-	end else if (eth_tx_active && eth_tx_done) begin
-		eth_tx_active <= 0;
-		pb_queue_head <= pb_queue_head + 1;
-	end else if (!eth_tx_active && pb_queue_head != pb_queue_tail)
-		eth_tx_start <= 1;
-end
-
-assign eth_ram_rst = eth_tx_start;
-wire [clog2(RAM_SIZE)-1:0] eth_tx_sfm_read_start;
-assign eth_tx_sfm_read_start = {pb_queue_head, {clog2(FGP_LEN){1'b0}}};
-wire eth_tx_sfm_readclk, eth_tx_sfm_outclk, eth_tx_sfm_done;
-wire [BYTE_LEN-1:0] eth_tx_sfm_out;
-stream_from_memory #(.RAM_SIZE(RAM_SIZE),
-	.RAM_READ_LATENCY(PACKET_BUFFER_READ_LATENCY)) eth_tx_sfm_inst(
-	.clk(clk), .rst(rst), .start(eth_tx_start),
-	.read_start(eth_tx_sfm_read_start),
-	.read_end(eth_tx_sfm_read_start + FGP_LEN),
-	.readclk(eth_tx_sfm_readclk),
-	.ram_outclk(eth_ram_outclk), .ram_out(eth_ram_out),
-	.ram_readclk(eth_ram_readclk), .ram_raddr(eth_ram_raddr),
-	.outclk(eth_tx_sfm_outclk), .out(eth_tx_sfm_out),
-	.done(eth_tx_sfm_done));
-assign rom_rst = eth_tx_start;
-eth_tx eth_tx_inst(
-	.clk(clk), .rst(rst), .start(eth_tx_start),
-	.in_done(eth_tx_sfm_done),
-	.inclk(eth_tx_sfm_outclk), .in(eth_tx_sfm_out),
-	.ram_outclk(rom_outclk), .ram_out(rom_out),
-	.ram_readclk(rom_readclk), .ram_raddr(rom_raddr),
-	.outclk(eth_txen), .out(eth_txd),
-	.upstream_readclk(eth_tx_sfm_readclk), .done(eth_tx_done));
 
 ////// UART TX <= RAM
 
@@ -404,64 +517,6 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(uart_tx_start),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.readclk(uart_tx_readclk));
-
-////// ETHERNET RX => VRAM
-
-wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err;
-wire [BYTE_LEN-1:0] eth_rx_out;
-wire eth_rx_ethertype_outclk;
-wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
-eth_rx eth_rx_inst(
-	.clk(clk), .rst(rst),
-	.inclk(rmii_outclk), .in(rmii_out),
-	.in_done(rmii_done),
-	.downstream_done(eth_rx_downstream_done),
-	.outclk(eth_rx_outclk), .out(eth_rx_out),
-	.ethertype_outclk(eth_rx_ethertype_outclk),
-	.ethertype_out(eth_rx_ethertype_out),
-	.err(eth_rx_err));
-wire eth_rx_downstream_rst;
-assign eth_rx_downstream_rst = rst || eth_rx_err;
-
-reg fgp_rx_en = 0;
-always @(posedge clk) begin
-	if (eth_rx_downstream_rst)
-		fgp_rx_en <= 0;
-	else if (eth_rx_ethertype_outclk)
-		fgp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FGP;
-end
-
-wire fgp_rx_setoff_req;
-wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
-wire fgp_rx_outclk;
-wire [BYTE_LEN-1:0] fgp_rx_out, fgp_rx_offset_out;
-fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(eth_rx_outclk && fgp_rx_en), .in(eth_rx_out),
-	.done(eth_rx_downstream_done),
-	.offset_outclk(fgp_rx_setoff_req), .offset_out(fgp_rx_offset_out),
-	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
-assign fgp_rx_setoff_val = {fgp_rx_offset_out,
-	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
-
-assign aes_decr_rst = eth_rx_downstream_rst;
-assign aes_decr_inclk = fgp_rx_outclk;
-assign aes_decr_in = fgp_rx_out;
-
-wire fgp_btc_outclk;
-wire [COLOR_LEN-1:0] fgp_btc_out;
-bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(aes_decr_outclk), .in(aes_decr_out),
-	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
-stream_to_memory
-	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.setoff_req(fgp_rx_setoff_req),
-	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
-	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
-	.ram_we(vram_we), .ram_waddr(vram_waddr),
-	.ram_win(vram_win));
 
 ////// VRAM => VGA
 
@@ -498,24 +553,22 @@ blinker blinker_inst(
 	.enable(1), .out(blink));
 
 assign LED = {
-	SW[15:3],
-	config_transmit,
+	SW[15:4],
 	blink,
+	uart_cts,
+	config_transmit,
 	rst
 };
 
 assign hex_display_data = {
-	pb_queue_head[3:0],
+	4'b0,
 	vram_waddr[13:6],
-	pb_queue_tail[3:0],
+	4'b0,
 	vram_raddr[13:6]
 };
 
 assign JB = {
-	eth_tx_done,
-	eth_tx_start,
-	eth_tx_active,
-	5'h0
+	8'h0
 };
 
 endmodule
