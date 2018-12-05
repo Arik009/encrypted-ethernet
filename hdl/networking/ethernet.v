@@ -263,7 +263,7 @@ assign ethertype_done =
 wire crc_done;
 assign crc_done =
 	state == STATE_CRC && cnt == ETH_CRC_LEN-1;
-assign done = crc_done;
+assign done = crc_done && !err;
 
 // shift in ethertype
 reg [(ETH_ETHERTYPE_LEN-1)*BYTE_LEN-1:0] ethertype_shifted;

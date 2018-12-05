@@ -48,7 +48,7 @@ reg [9:0] cnt = 0;
 wire metadata_done;
 assign metadata_done =
 	state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1;
-assign done = in_done || (metadata_done && is_ack);
+assign done = in_done || (readclk && metadata_done && is_ack);
 
 assign upstream_readclk = (state == STATE_DATA) && readclk;
 assign outclk_pd = (state == STATE_METADATA) && readclk;
@@ -61,7 +61,7 @@ always @(posedge clk) begin
 		metadata_buf <= {ffcp_type, ffcp_index};
 		cnt <= 0;
 	end else if (readclk) begin
-		if (state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1) begin
+		if (metadata_done) begin
 			state <= STATE_DATA;
 			cnt <= 0;
 		end else

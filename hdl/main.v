@@ -315,7 +315,7 @@ eth_tx eth_tx_inst(
 
 ////// ETHERNET RX => VRAM
 
-wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err;
+wire eth_rx_downstream_done, eth_rx_outclk, eth_rx_err, eth_rx_done;
 wire [BYTE_LEN-1:0] eth_rx_out;
 wire eth_rx_ethertype_outclk;
 wire [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] eth_rx_ethertype_out;
@@ -327,7 +327,7 @@ eth_rx eth_rx_inst(
 	.outclk(eth_rx_outclk), .out(eth_rx_out),
 	.ethertype_outclk(eth_rx_ethertype_outclk),
 	.ethertype_out(eth_rx_ethertype_out),
-	.err(eth_rx_err));
+	.err(eth_rx_err), .done(eth_rx_done));
 wire eth_rx_downstream_rst;
 assign eth_rx_downstream_rst = rst || eth_rx_err;
 
@@ -397,12 +397,21 @@ stream_to_memory
 
 ////// FFCP FLOW CONTROL
 
+reg ffcp_syn_buf;
+reg [FFCP_INDEX_LEN-1:0] ffcp_rx_index_buf;
+always @(posedge clk) begin
+	if (ffcp_rx_syn_outclk || ffcp_rx_msg_outclk) begin
+		ffcp_rx_index_buf <= ffcp_rx_index;
+		ffcp_syn_buf <= ffcp_rx_syn_outclk;
+	end
+end
+
 wire ffcp_ack_start;
 wire [FFCP_INDEX_LEN-1:0] ffcp_ack_index;
 ffcp_rx_server ffcp_rx_serv_inst(
-	.clk(clk), .rst(rst), .syn(ffcp_rx_syn_outclk),
-	.inclk(ffcp_rx_syn_outclk || ffcp_rx_msg_outclk),
-	.in_index(ffcp_rx_index),
+	.clk(clk), .rst(rst), .syn(eth_rx_done && ffcp_rx_en && ffcp_syn_buf),
+	.inclk(eth_rx_done && ffcp_rx_en),
+	.in_index(ffcp_rx_index_buf),
 	.downstream_done(eth_tx_done),
 	.outclk(ffcp_ack_start), .out_index(ffcp_ack_index));
 
@@ -561,10 +570,10 @@ assign LED = {
 };
 
 assign hex_display_data = {
-	4'b0,
-	vram_waddr[13:6],
-	4'b0,
-	vram_raddr[13:6]
+	pb_head[3:0],
+	ram_raddr[clog2(RAM_SIZE)-12+:12],
+	pb_tail[3:0],
+	ram_waddr[clog2(RAM_SIZE)-12+:12]
 };
 
 assign JB = {
