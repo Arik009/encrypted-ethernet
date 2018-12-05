@@ -1,3 +1,5 @@
+`include "params.vh"
+
 // measured in bytes/octets
 
 localparam ETH_PREAMBLE_LEN = 8;
@@ -22,4 +24,9 @@ localparam FFCP_METADATA_LEN = 1;
 localparam FFCP_DATA_LEN = FGP_LEN;
 localparam FFCP_LEN = FFCP_METADATA_LEN + FFCP_DATA_LEN;
 
+localparam FFCP_BUFFER_LEN = 2**FFCP_INDEX_LEN;
 localparam FFCP_WINDOW_LEN = 4;
+
+localparam PB_PARTITION_LEN = 2**clog2(FFCP_LEN);
+localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
+localparam PB_QUEUE_ALMOST_FULL_THRES = PB_QUEUE_LEN * 7 / 8;

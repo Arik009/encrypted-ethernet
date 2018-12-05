@@ -4,7 +4,6 @@ module test_daisy_chain();
 
 ////// INCLUDES
 
-`include "params.vh"
 `include "networking.vh"
 `include "packet_synth_rom_layout.vh"
 
@@ -172,8 +171,6 @@ wire [BYTE_LEN-1:0] encr_fgp_out;
 assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
 	uart_rx_fgp_offset_out : aes_encr_out;
 
-localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
-localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
 assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};

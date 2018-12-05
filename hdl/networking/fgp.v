@@ -16,7 +16,6 @@ module fgp_tx #(
 	output outclk, output [BYTE_LEN-1:0] out,
 	output upstream_readclk, done);
 
-`include "params.vh"
 `include "networking.vh"
 
 reg [BYTE_LEN-1:0] offset_buf;
@@ -74,7 +73,6 @@ module fgp_rx(
 	output [BYTE_LEN-1:0] offset_out,
 	output outclk, output [BYTE_LEN-1:0] out);
 
-`include "params.vh"
 `include "networking.vh"
 
 localparam STATE_OFFSET = 0;

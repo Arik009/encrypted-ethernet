@@ -179,7 +179,6 @@ endmodule
 
 module test_packet_parse();
 
-`include "params.vh"
 `include "networking.vh"
 `include "packet_synth_rom_layout.vh"
 
@@ -278,7 +277,6 @@ endmodule
 
 module test_ffcp_rx_server();
 
-`include "params.vh"
 `include "networking.vh"
 
 reg clk = 0;
@@ -293,9 +291,21 @@ wire [FFCP_INDEX_LEN-1:0] out_index;
 delay delay_inst(
 	.clk(clk), .rst(rst), .in(outclk), .out(downstream_done));
 
+reg [FFCP_INDEX_LEN+3:0] cnt = 0;
+reg use_cnt = 0;
+always @(posedge clk) begin
+	if (use_cnt)
+		cnt <= cnt + 1;
+end
+
+wire [FFCP_INDEX_LEN-1:0] actual_in_index;
+assign actual_in_index = use_cnt ? cnt[2+:FFCP_INDEX_LEN] : in_index;
+wire actual_inclk;
+assign actual_inclk = use_cnt ? (cnt[1:0] == 0) : inclk;
+
 ffcp_rx_server ffcp_rx_serv_inst(
 	.clk(clk), .rst(rst), .syn(syn),
-	.inclk(inclk), .in_index(in_index),
+	.inclk(actual_inclk), .in_index(actual_in_index),
 	.downstream_done(downstream_done),
 	.outclk(outclk), .out_index(out_index));
 
@@ -365,7 +375,85 @@ initial begin
 	#40
 
 	#100
+	use_cnt = 1;
+	#(16*20*FFCP_BUFFER_LEN)
 
+	$stop();
+end
+
+endmodule
+
+module test_ffcp_tx_server();
+
+`include "networking.vh"
+
+reg clk = 0;
+// 50MHz clock
+initial forever #10 clk = ~clk;
+
+reg rst = 1;
+reg advance_tail = 0;
+reg inclk = 0;
+reg [FFCP_INDEX_LEN-1:0] in_index;
+
+wire almost_full;
+wire inclk_pb, downstream_done;
+wire [clog2(PB_QUEUE_LEN)-1:0] in_pb_head;
+wire [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail;
+wire outclk, out_syn;
+wire [FFCP_INDEX_LEN-1:0] out_index;
+wire [clog2(PB_QUEUE_LEN)-1:0] out_buf_pos;
+ffcp_tx_queue ffcp_tx_queue_inst (
+	.clk(clk), .rst(rst),
+	.advance_tail(advance_tail),
+	.inclk(inclk_pb), .in_head(in_pb_head),
+	.almost_full(almost_full),
+	.head(pb_head), .tail(pb_tail));
+ffcp_tx_server ffcp_tx_serv_inst (
+	.clk(clk), .rst(rst),
+	.pb_head(pb_head), .pb_tail(pb_tail),
+	.downstream_done(downstream_done),
+	.inclk(inclk), .in_index(in_index),
+	.outclk(outclk), .out_syn(out_syn),
+	.out_index(out_index), .out_buf_pos(out_buf_pos),
+	.outclk_pb(inclk_pb), .out_pb_head(in_pb_head));
+delay delay_inst (
+	.clk(clk), .rst(rst), .in(outclk), .out(downstream_done));
+
+initial begin
+	#400
+	rst = 0;
+	#100
+	advance_tail = 1;
+	#20
+	advance_tail = 0;
+	#400
+	advance_tail = 1;
+	#100
+	advance_tail = 0;
+	#400
+	inclk = 1;
+	in_index = 1;
+	advance_tail = 1;
+	#20
+	in_index = 2;
+	#20
+	in_index = 1;
+	#20
+	in_index = 5;
+	#20
+	inclk = 0;
+	#20
+	advance_tail = 0;
+	#2000
+	advance_tail = 1;
+	#100
+	inclk = 1;
+	in_index = 3;
+	advance_tail = 0;
+	#20
+	inclk = 0;
+	#1000
 	$stop();
 end
 

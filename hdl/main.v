@@ -2,6 +2,7 @@
 // SW[1]: master configure: on for transmit, off for receive
 // 	additionally, if on, uart debug output will read from vram,
 // 	otherwise from packet buffer
+// SW[2]: UART_CTS override (to test flow control)
 // BTNC: dump ram
 // BTNL: send sample packet
 module main(
@@ -39,7 +40,6 @@ module main(
 
 ////// INCLUDES
 
-`include "params.vh"
 `include "networking.vh"
 
 localparam RAM_SIZE = PACKET_BUFFER_SIZE;
@@ -68,11 +68,13 @@ clk_wiz_0 clk_wiz_inst(
 
 ////// RESET
 
-wire sw0, sw1;
+wire sw0, sw1, sw2;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
 	.clk(clk), .rst(0), .in(SW[0]), .out(sw0));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
 	.clk(clk), .rst(0), .in(SW[1]), .out(sw1));
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw2_sync(
+	.clk(clk), .rst(0), .in(SW[2]), .out(sw2));
 
 wire config_transmit;
 assign config_transmit = sw1;
@@ -269,16 +271,20 @@ delay #(.DATA_WIDTH(2)) eth_txd_delay(
 
 ////// UART RX => RAM
 
-assign UART_CTS = 1;
+wire uart_cts;
+assign uart_cts = sw2;
+assign UART_CTS = uart_cts;
 wire [7:0] uart_rx_out;
 wire uart_rx_outclk;
 uart_rx_fast_driver uart_rx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst),
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 wire uart_rx_active;
-// reset downstream modules if nothing is received for 1ms
+// reset downstream modules if nothing is received for 1ms, and not
+// because we told upstream to stop transmitting
 pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
-	.clk(clk), .rst(rst), .in(uart_rx_outclk), .out(uart_rx_active));
+	.clk(clk), .rst(rst),
+	.in(uart_rx_outclk || uart_cts), .out(uart_rx_active));
 wire uart_rx_downstream_rst;
 assign uart_rx_downstream_rst = rst || !uart_rx_active;
 
@@ -304,8 +310,6 @@ wire [BYTE_LEN-1:0] encr_fgp_out;
 assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
 	uart_rx_fgp_offset_out : aes_encr_out;
 
-localparam PB_PARTITION_LEN = 2**clog2(FGP_LEN);
-localparam PB_QUEUE_LEN = PACKET_BUFFER_SIZE / PB_PARTITION_LEN;
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 reg [clog2(PB_QUEUE_LEN)-1:0] pb_queue_head = 0, pb_queue_tail = 0;
 assign uart_ram_waddr = {pb_queue_tail, uart_rx_cnt};

@@ -16,7 +16,6 @@ module ffcp_tx #(
 	output outclk, output [BYTE_LEN-1:0] out,
 	output upstream_readclk, done);
 
-`include "params.vh"
 `include "networking.vh"
 
 reg [BYTE_LEN-1:0] metadata_buf;
@@ -72,7 +71,6 @@ module ffcp_rx(
 	output [FFCP_INDEX_LEN-1:0] ffcp_index,
 	output outclk, output [BYTE_LEN-1:0] out);
 
-`include "params.vh"
 `include "networking.vh"
 
 localparam STATE_METADATA = 0;
@@ -112,10 +110,7 @@ module ffcp_rx_server(
 	input downstream_done,
 	output outclk, output [FFCP_INDEX_LEN-1:0] out_index);
 
-`include "params.vh"
 `include "networking.vh"
-
-localparam FFCP_BUFFER_LEN = 2**FFCP_INDEX_LEN;
 
 reg received[FFCP_BUFFER_LEN-1:0];
 reg [clog2(FFCP_BUFFER_LEN)-1:0] rst_cnt = 0;
@@ -135,15 +130,9 @@ always @(posedge clk) begin
 		downstream_rdy <= 1;
 end
 
-// ignore all messages from FFCP_WINDOW_LEN indices before head
-// be careful of wraparound
-wire [clog2(FFCP_BUFFER_LEN)-1:0] ignore_start;
+// ignore all messages other than those in receive window// be careful of wraparound
 wire ignore, receiving;
-assign ignore_start = queue_head - FFCP_WINDOW_LEN;
-assign ignore =
-	(ignore_start < queue_head) ?
-		(in_index >= ignore_start && in_index < queue_head)
-	: (in_index >= ignore_start || in_index < queue_head);
+assign ignore = in_index - queue_head >= FFCP_WINDOW_LEN;
 assign receiving = inclk && !ignore;
 
 // try to ack as many indices as possible, so wait until the queue head
@@ -175,6 +164,122 @@ always @(posedge clk) begin
 		queue_head <= queue_head + 1;
 	end else if (outclk)
 		ack_buf <= 0;
+end
+
+endmodule
+
+// the ffcp_tx_queue manages the packet buffer (PB), intended for use
+// with ffcp_tx_server
+// we only need to be able to advance the tail by one index each time,
+// or overwrite the head
+module ffcp_tx_queue(
+	input clk, rst,
+	input advance_tail,
+	input inclk, input [clog2(PB_QUEUE_LEN)-1:0] in_head,
+	output almost_full,
+	output reg [clog2(PB_QUEUE_LEN)-1:0] head, tail);
+
+`include "networking.vh"
+
+assign almost_full = tail - head >= PB_QUEUE_ALMOST_FULL_THRES;
+
+always @(posedge clk) begin
+	if (rst) begin
+		tail <= 0;
+		head <= 0;
+	end else begin
+		if (inclk)
+			head <= in_head;
+		if (advance_tail)
+			tail <= tail + 1;
+	end
+end
+
+endmodule
+
+// inclk: ack indices
+// outclk: ffcp index and payload index in PB
+// outclk_pb: update PB queue head
+module ffcp_tx_server(
+	input clk, rst,
+	input [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail,
+	input downstream_done,
+	input inclk, input [FFCP_INDEX_LEN-1:0] in_index,
+	output outclk, out_syn,
+	output [FFCP_INDEX_LEN-1:0] out_index,
+	output [clog2(PB_QUEUE_LEN)-1:0] out_buf_pos,
+	output outclk_pb,
+	output [clog2(PB_QUEUE_LEN)-1:0] out_pb_head);
+
+`include "networking.vh"
+
+reg downstream_rdy = 1;
+always @(posedge clk) begin
+	if (rst)
+		downstream_rdy <= 1;
+	else if (outclk)
+		downstream_rdy <= 0;
+	else if (downstream_done)
+		downstream_rdy <= 1;
+end
+
+reg [clog2(FFCP_BUFFER_LEN)-1:0] queue_head = 0;
+reg [clog2(FFCP_BUFFER_LEN)-1:0] curr_index = 0;
+
+wire [clog2(FFCP_BUFFER_LEN)-1:0] window_end;
+wire at_end;
+assign window_end = queue_head + FFCP_WINDOW_LEN;
+assign at_end = curr_index == window_end ||
+	curr_index - queue_head + pb_head == pb_tail;
+
+// ignore all acks other than those in transmit window
+// be careful of wraparound
+wire ignore, receiving;
+assign ignore = in_index - queue_head >= FFCP_WINDOW_LEN;
+assign receiving = inclk && !ignore;
+
+assign outclk_pb = receiving;
+assign out_pb_head = in_index - queue_head + pb_head;
+
+// first packet should be a syn once reset is done
+reg syn_buf = 1;
+assign out_syn = syn_buf && out_index == 0;
+assign out_index = curr_index;
+assign out_buf_pos = curr_index - queue_head + pb_head;
+assign outclk = !rst && downstream_rdy && !at_end;
+
+localparam TESTING = 0;
+localparam RESEND_TIMEOUT = TESTING ? 4 : 500000;
+localparam RESYN_TIMEOUT = TESTING ? 20 : 50000000;
+
+wire resend_disable, resyn_disable, resyn;
+// wait for 10ms before trying again
+pulse_extender #(.EXTEND_LEN(RESEND_TIMEOUT)) resend_timer (
+	.clk(clk), .rst(rst), .in(!at_end), .out(resend_disable));
+// wait for 1s before trying to re-establish the connection
+pulse_extender #(.EXTEND_LEN(RESYN_TIMEOUT)) resyn_timer (
+	.clk(clk), .rst(rst), .in(inclk), .out(resyn_disable));
+pulse_generator resyn_pg (
+	.clk(clk), .rst(rst), .in(!resyn_disable), .out(resyn));
+
+always @(posedge clk) begin
+	if (rst || resyn) begin
+		queue_head <= 0;
+		curr_index <= 0;
+		syn_buf <= 1;
+	end else begin
+		if (receiving) begin
+			syn_buf <= 0;
+			queue_head <= in_index;
+		end
+		// if in_index is "more than" curr_index, just skip ahead
+		if (receiving && in_index - curr_index < FFCP_WINDOW_LEN)
+			curr_index <= in_index;
+		else if (outclk)
+			curr_index <= curr_index + 1;
+		else if (!resend_disable)
+			curr_index <= queue_head;
+	end
 end
 
 endmodule

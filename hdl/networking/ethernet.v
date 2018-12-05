@@ -13,7 +13,6 @@ module eth_body_tx #(
 	output outclk, output [BYTE_LEN-1:0] out,
 	output upstream_readclk, done);
 
-`include "params.vh"
 `include "packet_synth_rom_layout.vh"
 `include "networking.vh"
 
@@ -138,7 +137,6 @@ module eth_tx #(
 	output outclk, output [1:0] out,
 	output upstream_readclk, done);
 
-`include "params.vh"
 `include "networking.vh"
 
 // main processing ready for frame body
@@ -225,7 +223,6 @@ module eth_rx(
 	output [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] ethertype_out,
 	output err, done);
 
-`include "params.vh"
 `include "networking.vh"
 
 wire frame_rst;
