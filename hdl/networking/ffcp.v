@@ -195,7 +195,8 @@ module ffcp_tx_queue(
 
 `include "networking.vh"
 
-assign almost_full = tail - head >= PB_QUEUE_ALMOST_FULL_THRES;
+wire [clog2(PB_QUEUE_LEN)-1:0] space_used = tail - head;
+assign almost_full = space_used >= PB_QUEUE_ALMOST_FULL_THRES;
 
 always @(posedge clk) begin
 	if (rst) begin

@@ -90,7 +90,7 @@ assign config_change_reset = sw1 != prev_sw1;
 
 wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
-localparam TESTING = 1;
+localparam TESTING = 0;
 localparam RESET_TIMEOUT = TESTING ? 1 : 5000000;
 pulse_extender #(.EXTEND_LEN(RESET_TIMEOUT)) reset_pe(
 	.clk(clk), .rst(1'b0), .in(sw0 || config_change_reset), .out(rst));
