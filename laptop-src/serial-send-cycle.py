@@ -1,7 +1,7 @@
 import sys
 import os
 import os.path
-from time import sleep
+import time
 sys.path.append('../lib/')
 import eth
 import image_bytes
@@ -12,11 +12,13 @@ STOP_EARLY = False
 image_dir = 'images/rickroll/'
 IMAGE_WIDTH = 128
 IMAGE_HEIGHT = 128
+FRAME_PERIOD = 1/12
 
 def send_cycle(ser):
 	# Only cycle a few times for testing
 	cnt = 0
 	images = sorted(os.listdir(image_dir))
+	prev_time = time.time()
 	while True:
 		if STOP_EARLY and cnt == 5:
 			break
@@ -30,7 +32,11 @@ def send_cycle(ser):
 					eth.gen_eth_fgp_payload(i*512, im[i*512:(i+1)*512]))
 			ser.flush()
 			# print("%d bytes written" % num_written)
-			# sleep(0.02)
+			curr_time = time.time()
+			time_diff = curr_time - prev_time
+			if time_diff < FRAME_PERIOD:
+				time.sleep(FRAME_PERIOD - time_diff)
+			prev_time = curr_time
 		cnt = cnt + 1
 
 fpga_serial.do_serial(send_cycle)
