@@ -44,6 +44,47 @@ end
 
 endmodule
 
+module test_aes_keygen();
+
+reg clk_100mhz = 0;
+// 100MHz clock
+initial forever #5 clk_100mhz = ~clk_100mhz;
+
+wire clk;
+clk_wiz_0 clk_wiz_inst(
+	.reset(0),
+	.clk_in1(clk_100mhz),
+	.clk_out1(clk));
+
+reg [127:0] key;
+wire [127:0] keyout;
+reg [3:0] keyout_sel;
+
+reg rst; 
+reg in_clk;
+reg start;
+wire out_clk, out_clk_2; 
+
+keygen a(.clk(clk), .key(key), .start(start), .keyout_selected(keyout), .keyout_sel(keyout_sel));
+
+initial begin
+	#250
+	rst = 0;
+    key = 1234343;
+    keyout_sel = 1;
+    start = 0;
+    #10
+    start = 1;
+    #10
+    start = 0;
+    
+	#800
+
+	$stop();
+end
+
+endmodule
+
 module test_aes_inversion();
 
 reg clk_100mhz = 0;

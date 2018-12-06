@@ -69,10 +69,7 @@ blocks_to_bytes bltb_inst(
 	.outclk(outclk), .out(out));
 
 endmodule
-
-//module gen_round_key(input [127:0] key, 
-//                     output [127:0] round_key [9:0]);
-//endmodule                     
+            
 
 
 module aes_block(input [127:0] in, 
@@ -107,6 +104,73 @@ module aes_block(input [127:0] in,
 	assign out = decr_select ? (
 		(block_num == 9) ? rc_out_d : mc_out_d) : rc_out_e;
 
+endmodule
+
+module keygen(input clk,
+              input start,
+              input [127:0] key, 
+              input [3:0] keyout_sel,
+              output [127:0] keyout_selected);
+    reg [127:0] rcon; 
+    
+    reg generating;
+    reg [3:0] round_num;
+    reg [31:0] w0, w1, w2, w3;
+    
+    reg [127:0] keyout [10:0];
+    
+    assign keyout_selected = keyout[keyout_sel];
+    always @(posedge clk) begin
+        if (start) begin
+            generating <= 1;
+            round_num <= 1;
+            keyout[0] <= key;
+            w0 <= key[127:96];
+            w1 <= key[95:64];
+            w2 <= key[63:32];
+            w3 <= key[31:0];
+        end  
+        else if (generating && round_num <= 10) begin
+            w0 <= w0^temp^rcon;
+            w1 <= w0^temp^rcon^w1;  
+            w2 <= w0^temp^rcon^w1^w2; 
+            w3 <= w0^temp^rcon^w1^w2^w3; 
+        
+            keyout[round_num][127:96] <= w0^temp^rcon;
+            keyout[round_num][95:64] <= w0^temp^rcon^w1;                                                               
+            keyout[round_num][63:32] <= w0^temp^rcon^w1^w2;
+            keyout[round_num][31:0] <= w0^temp^rcon^w1^w2^w3;
+            round_num <= round_num + 1;
+        end      
+    end
+    
+    wire [7:0] temp0, temp1, temp2, temp3;
+    wire [31:0] temp;
+    
+    sbox q0( .in(keyout[round_num-1][63:56]),.out(temp0));
+    sbox q1( .in(keyout[round_num-1][63:56]),.out(temp1));
+    sbox q2( .in(keyout[round_num-1][63:56]),.out(temp2));
+    sbox q3( .in(keyout[round_num-1][63:56]),.out(temp3));
+    assign temp = {temp1,temp2,temp3,temp0};
+    
+    // rc_i top byte of rcon
+    // rc_i = rc_{i-1} *2 if <= rc_{i-1} h'80 else rc_{i-1} *2  ^ h'11b        
+    always @(*) begin
+        case (round_num) 
+            4'h1: rcon=128'h01_00_00_00_00;                                
+            4'h2: rcon=128'h02_00_00_00_00;
+            4'h3: rcon=128'h04_00_00_00_00;
+            4'h4: rcon=128'h08_00_00_00_00;
+            4'h5: rcon=128'h10_00_00_00_00;
+            4'h6: rcon=128'h20_00_00_00_00;
+            4'h7: rcon=128'h40_00_00_00_00;
+            4'h8: rcon=128'h80_00_00_00_00;
+            4'h9: rcon=128'h1b_00_00_00_00;
+            4'h10: rcon=128'h36_00_00_00_00;
+            default: rcon = 0;
+        endcase
+    end
+              
 endmodule
 
 module addroundkey(input [127:0] in,
