@@ -146,7 +146,9 @@ end
 
 // ignore all messages other than those in receive window// be careful of wraparound
 wire ignore, receiving;
-assign ignore = in_index - queue_head >= FFCP_WINDOW_LEN;
+wire [clog2(FFCP_BUFFER_LEN)-1:0] in_index_head_off;
+assign in_index_head_off = in_index - queue_head;
+assign ignore = in_index_head_off >= FFCP_WINDOW_LEN;
 assign receiving = inclk && !ignore;
 
 // try to ack as many indices as possible, so wait until the queue head
@@ -245,13 +247,16 @@ reg [clog2(FFCP_BUFFER_LEN)-1:0] curr_index = 0;
 wire [clog2(FFCP_BUFFER_LEN)-1:0] window_end;
 wire at_end;
 assign window_end = queue_head + FFCP_WINDOW_LEN;
-assign at_end = curr_index == window_end ||
-	curr_index - queue_head + pb_head == pb_tail;
+wire [clog2(PB_QUEUE_LEN)-1:0] curr_index_pb;
+assign curr_index_pb = curr_index - queue_head + pb_head;
+assign at_end = curr_index == window_end || curr_index_pb == pb_tail;
 
 // ignore all acks other than those in transmit window
 // be careful of wraparound
 wire ignore, receiving;
-assign ignore = in_index - queue_head >= FFCP_WINDOW_LEN;
+wire [clog2(FFCP_BUFFER_LEN)-1:0] in_index_head_off;
+assign in_index_head_off = in_index - queue_head;
+assign ignore = in_index_head_off >= FFCP_WINDOW_LEN;
 assign receiving = inclk && !ignore;
 
 assign outclk_pb = receiving;
@@ -278,6 +283,9 @@ pulse_extender #(.EXTEND_LEN(RESYN_TIMEOUT)) resyn_timer (
 pulse_generator resyn_pg (
 	.clk(clk), .rst(rst), .in(!resyn_disable), .out(resyn));
 
+wire [clog2(FFCP_BUFFER_LEN)-1:0] in_index_curr_index_off;
+assign in_index_curr_index_off = in_index - curr_index;
+
 always @(posedge clk) begin
 	if (rst || resyn) begin
 		queue_head <= 0;
@@ -289,7 +297,7 @@ always @(posedge clk) begin
 			queue_head <= in_index;
 		end
 		// if in_index is "more than" curr_index, just skip ahead
-		if (receiving && in_index - curr_index < FFCP_WINDOW_LEN)
+		if (receiving && in_index_curr_index_off < FFCP_WINDOW_LEN)
 			curr_index <= in_index;
 		else if (outclk)
 			curr_index <= curr_index + 1;
