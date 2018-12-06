@@ -48,7 +48,12 @@ reg [9:0] cnt = 0;
 wire metadata_done;
 assign metadata_done =
 	state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1;
-assign done = in_done || (readclk && metadata_done && is_ack);
+wire ack_done;
+delay #(.DELAY_LEN(LATENCY),
+	.DATA_WIDTH(BYTE_LEN)) done_delay(
+	.clk(clk), .rst(rst || start),
+	.in(readclk && metadata_done && is_ack), .out(ack_done));
+assign done = in_done || ack_done;
 
 assign upstream_readclk = (state == STATE_DATA) && readclk;
 assign outclk_pd = (state == STATE_METADATA) && readclk;
