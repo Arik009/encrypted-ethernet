@@ -434,9 +434,6 @@ assign ffcp_rx_syn_outclk =
 assign ffcp_rx_msg_outclk =
 	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_MSG;
 
-wire ffcp_rx_downstream_rst;
-assign ffcp_rx_downstream_rst = eth_rx_downstream_rst || ffcp_rx_syn_outclk;
-
 wire ffcp_rx_commit, ffcp_rx_commit_done;
 
 wire pb_advance_tail_rx, pb_advance_head_rx;
@@ -444,25 +441,30 @@ reg [clog2(FGP_LEN)-1:0] fgp_rx_cnt = 0;
 assign rx_ram_waddr = {pb_tail, fgp_rx_cnt};
 assign rx_ram_we = ffcp_rx_outclk;
 assign rx_ram_win = ffcp_rx_out;
-assign pb_advance_tail_rx = ffcp_rx_eth_done;
+// advance tail one cycle later, since queue is reset on syn
+delay pb_advance_tail_rx_delay(
+	.clk(clk), .rst(rst), .in(ffcp_rx_eth_done), .out(pb_advance_tail_rx));
 assign pb_advance_head_rx = ffcp_rx_commit;
 always @(posedge clk) begin
-	if (ffcp_rx_downstream_rst)
+	if (eth_rx_downstream_rst)
 		fgp_rx_cnt <= 0;
 	else if (pb_advance_tail_rx)
 		fgp_rx_cnt <= 0;
 	else if (ffcp_rx_outclk)
 		fgp_rx_cnt <= fgp_rx_cnt + 1;
 end
-assign pb_rst_rx = ffcp_rx_downstream_rst;
+wire ffcp_rx_serv_syn;
+assign pb_rst_rx = ffcp_rx_serv_syn;
 
+wire ffcp_rx_serv_downstream_rst;
+assign ffcp_rx_serv_downstream_rst = rst || ffcp_rx_serv_syn;
 wire [clog2(RAM_SIZE)-1:0] ffcp_rx_sfm_read_start;
 assign ffcp_rx_sfm_read_start = {pb_head, {clog2(FGP_LEN){1'b0}}};
 wire ffcp_rx_sfm_readclk, ffcp_rx_sfm_outclk;
 wire [BYTE_LEN-1:0] ffcp_rx_sfm_out;
 stream_from_memory #(.RAM_SIZE(RAM_SIZE),
 	.RAM_READ_LATENCY(PACKET_BUFFER_READ_LATENCY)) ffcp_rx_sfm_inst(
-	.clk(clk), .rst(ffcp_rx_downstream_rst), .start(ffcp_rx_commit),
+	.clk(clk), .rst(ffcp_rx_serv_downstream_rst), .start(ffcp_rx_commit),
 	.read_start(ffcp_rx_sfm_read_start),
 	.read_end(ffcp_rx_sfm_read_start + FGP_LEN),
 	.readclk(ffcp_rx_sfm_readclk),
@@ -470,7 +472,7 @@ stream_from_memory #(.RAM_SIZE(RAM_SIZE),
 	.ram_readclk(rx_ram_readclk), .ram_raddr(rx_ram_raddr),
 	.outclk(ffcp_rx_sfm_outclk), .out(ffcp_rx_sfm_out),
 	.done(ffcp_rx_commit_done));
-assign rx_ram_rst = ffcp_rx_downstream_rst;
+assign rx_ram_rst = ffcp_rx_serv_downstream_rst;
 assign ffcp_rx_sfm_readclk = aes_decr_upstream_readclk;
 
 wire fgp_rx_setoff_req;
@@ -479,7 +481,7 @@ wire fgp_rx_outclk;
 wire [BYTE_LEN-1:0] fgp_rx_out, fgp_rx_offset_out;
 wire fgp_rx_done;
 fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(ffcp_rx_downstream_rst),
+	.clk(clk), .rst(ffcp_rx_serv_downstream_rst),
 	.inclk(ffcp_rx_sfm_outclk && !config_transmit), .in(ffcp_rx_sfm_out),
 	.done(fgp_rx_done),
 	.offset_outclk(fgp_rx_setoff_req), .offset_out(fgp_rx_offset_out),
@@ -487,7 +489,7 @@ fgp_rx fgp_rx_inst(
 assign fgp_rx_setoff_val = {fgp_rx_offset_out,
 	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
 
-assign aes_decr_rst = ffcp_rx_downstream_rst;
+assign aes_decr_rst = ffcp_rx_serv_downstream_rst;
 assign aes_decr_inclk = fgp_rx_outclk;
 assign aes_decr_in = fgp_rx_out;
 assign aes_decr_readclk = 1'b1;
@@ -495,13 +497,13 @@ assign aes_decr_readclk = 1'b1;
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(ffcp_rx_downstream_rst),
+	.clk(clk), .rst(ffcp_rx_serv_downstream_rst),
 	.inclk(aes_decr_outclk), .in(aes_decr_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 assign aes_decr_in_done = 1'b0;
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(ffcp_rx_downstream_rst),
+	.clk(clk), .rst(ffcp_rx_serv_downstream_rst),
 	.setoff_req(fgp_rx_setoff_req),
 	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
 	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
@@ -521,8 +523,9 @@ end
 
 wire ffcp_ack_start;
 wire [FFCP_INDEX_LEN-1:0] ffcp_ack_index;
+assign ffcp_rx_serv_syn = ffcp_rx_eth_done && ffcp_syn_buf;
 ffcp_rx_server ffcp_rx_serv_inst(
-	.clk(clk), .rst(rst), .syn(ffcp_rx_eth_done && ffcp_syn_buf),
+	.clk(clk), .rst(rst), .syn(ffcp_rx_serv_syn),
 	.inclk(ffcp_rx_eth_done),
 	.in_index(ffcp_rx_index_buf),
 	.downstream_done(eth_tx_done),
