@@ -49,8 +49,7 @@ wire metadata_done;
 assign metadata_done =
 	state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1;
 wire ack_done;
-delay #(.DELAY_LEN(LATENCY),
-	.DATA_WIDTH(BYTE_LEN)) done_delay(
+delay #(.DELAY_LEN(LATENCY)) done_delay(
 	.clk(clk), .rst(rst || start),
 	.in(readclk && metadata_done && is_ack), .out(ack_done));
 assign done = in_done || ack_done;

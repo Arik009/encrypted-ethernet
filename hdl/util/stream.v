@@ -75,7 +75,7 @@ always @(posedge clk) begin
 				idle <= 0;
 				shifted <= {{S_LEN{1'b0}}, in[S_LEN+:L_LEN-S_LEN]};
 			end else begin
-				shifted <= {{S_LEN{1'b0}}, shifted[S_LEN+:L_LEN-2*S_LEN]};
+				shifted <= {{S_LEN{1'b0}}, shifted[S_LEN+:L_LEN-S_LEN]};
 				if (cnt == PACK_RATIO-1)
 					idle <= 1;
 			end

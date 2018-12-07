@@ -71,7 +71,7 @@ blocks_to_bytes bltb_inst(
 endmodule
 
 module aes_combined_bytes_buf(
-	input clk, rst, start,
+	input clk, rst,
 	input inclk, input [BYTE_LEN-1:0] in, input in_done,
 	input [BLOCK_LEN-1:0] key,
 	input readclk,

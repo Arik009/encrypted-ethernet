@@ -634,6 +634,7 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(uart_tx_start),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
 	.upstream_readclk(uart_sfm_readclk));
+assign uart_tx_readclk = 1'b1;
 
 ////// VRAM => VGA
 
