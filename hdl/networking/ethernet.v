@@ -66,7 +66,7 @@ always @(posedge clk) begin
 		state <= STATE_MAC_DST;
 		ram_raddr <= MAC_RECV_OFF;
 		cnt <= 0;
-	end else if (readclk) begin
+	end else if (outclk) begin
 		if (state == STATE_MAC_DST && cnt == ETH_MAC_LEN-1) begin
 			cnt <= 0;
 			state <= STATE_MAC_SRC;

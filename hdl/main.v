@@ -435,31 +435,31 @@ assign ffcp_rx_msg_outclk =
 	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_MSG;
 
 wire ffcp_rx_commit, ffcp_rx_commit_done;
+wire [clog2(FFCP_BUFFER_LEN)-1:0] ffcp_rx_commit_index;
 
 wire pb_advance_tail_rx, pb_advance_head_rx;
 reg [clog2(FGP_LEN)-1:0] fgp_rx_cnt = 0;
-assign rx_ram_waddr = {pb_tail, fgp_rx_cnt};
+assign rx_ram_waddr = {ffcp_rx_index_buf, fgp_rx_cnt};
 assign rx_ram_we = ffcp_rx_outclk;
 assign rx_ram_win = ffcp_rx_out;
-// advance tail one cycle later, since queue is reset on syn
-delay pb_advance_tail_rx_delay(
-	.clk(clk), .rst(rst), .in(ffcp_rx_eth_done), .out(pb_advance_tail_rx));
-assign pb_advance_head_rx = ffcp_rx_commit;
+assign pb_advance_tail_rx = 1'b0;
+assign pb_advance_head_rx = 1'b0;
+assign pb_rst_rx = 1'b0;
 always @(posedge clk) begin
 	if (eth_rx_downstream_rst)
 		fgp_rx_cnt <= 0;
-	else if (pb_advance_tail_rx)
+	else if (ffcp_rx_eth_done)
 		fgp_rx_cnt <= 0;
 	else if (ffcp_rx_outclk)
 		fgp_rx_cnt <= fgp_rx_cnt + 1;
 end
 wire ffcp_rx_serv_syn;
-assign pb_rst_rx = ffcp_rx_serv_syn;
 
 wire ffcp_rx_serv_downstream_rst;
 assign ffcp_rx_serv_downstream_rst = rst || ffcp_rx_serv_syn;
 wire [clog2(RAM_SIZE)-1:0] ffcp_rx_sfm_read_start;
-assign ffcp_rx_sfm_read_start = {pb_head, {clog2(FGP_LEN){1'b0}}};
+assign ffcp_rx_sfm_read_start =
+	{ffcp_rx_commit_index, {clog2(FGP_LEN){1'b0}}};
 wire ffcp_rx_sfm_readclk, ffcp_rx_sfm_outclk;
 wire [BYTE_LEN-1:0] ffcp_rx_sfm_out;
 stream_from_memory #(.RAM_SIZE(RAM_SIZE),
@@ -529,7 +529,8 @@ ffcp_rx_server ffcp_rx_serv_inst(
 	.inclk(ffcp_rx_eth_done),
 	.in_index(ffcp_rx_index_buf),
 	.downstream_done(eth_tx_done),
-	.commit(ffcp_rx_commit), .commit_done(ffcp_rx_commit_done),
+	.commit(ffcp_rx_commit), .commit_index(ffcp_rx_commit_index),
+	.commit_done(ffcp_rx_commit_done),
 	.outclk(ffcp_ack_start), .out_index(ffcp_ack_index));
 
 wire [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail;

@@ -82,8 +82,19 @@ initial begin
 	uart_tx_start_manual = 1;
 	#20
 	uart_tx_start_manual = 0;
-	// 12mbaud = 84ns per bit, for a frame of 914 bytes
-	// multiply by 2 to account for overhead
+	#(2 * 84 * 914 * 8)
+
+	// test resyn
+	#2000000
+
+	uart_tx_start_manual = 1;
+	#20
+	uart_tx_start_manual = 0;
+	#(2 * 84 * 914 * 8)
+
+	uart_tx_start_manual = 1;
+	#20
+	uart_tx_start_manual = 0;
 	#(2 * 84 * 914 * 8)
 
 	$stop();

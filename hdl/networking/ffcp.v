@@ -96,7 +96,9 @@ reg [9:0] cnt = 0;
 wire metadata_done;
 assign metadata_done =
 	state == STATE_METADATA && cnt == FFCP_METADATA_LEN-1;
-assign done = inclk && state == STATE_DATA && cnt == FFCP_DATA_LEN-1;
+assign done = inclk && (
+	(metadata_done && in[FFCP_INDEX_LEN+:FFCP_TYPE_LEN] == FFCP_TYPE_ACK) ||
+	(state == STATE_DATA && cnt == FFCP_DATA_LEN-1));
 assign metadata_outclk = inclk && metadata_done;
 assign ffcp_type = in[FFCP_INDEX_LEN+:FFCP_TYPE_LEN];
 assign ffcp_index = in[0+:FFCP_INDEX_LEN];
@@ -122,7 +124,8 @@ module ffcp_rx_server(
 	input clk, rst, syn,
 	input inclk, input [FFCP_INDEX_LEN-1:0] in_index,
 	input downstream_done,
-	input commit_done, output commit,
+	input commit_done,
+	output commit, output [FFCP_INDEX_LEN-1:0] commit_index,
 	output outclk, output [FFCP_INDEX_LEN-1:0] out_index);
 
 `include "networking.vh"
@@ -165,12 +168,15 @@ assign receiving = inclk && !ignore;
 // try to ack as many indices as possible, so wait until the queue head
 // has advanced past all received packets before acking
 // also wait until self and downstream is ready
+// also wait until any pending commits have finished
 reg ack_buf = 0;
-assign outclk = !receiving && !commit && downstream_rdy && ack_buf &&
+assign outclk = !curr_received && commit_rdy &&
+	downstream_rdy && ack_buf &&
 	!rst && !syn && rst_done && !receiving;
 assign out_index = queue_head;
-assign commit = curr_received && commit_rdy &&
+assign commit = !outclk && curr_received && commit_rdy &&
 	!rst && !syn && rst_done && !receiving;
+assign commit_index = queue_head;
 
 always @(posedge clk) begin
 	if (rst || syn) begin
@@ -190,11 +196,12 @@ always @(posedge clk) begin
 			queue_head <= queue_head + 1;
 		if (receiving)
 			received[in_index] <= 1;
+		else if (outclk)
+			ack_buf <= 0;
 		else if (commit) begin
 			ack_buf <= 1;
 			received[queue_head] <= 0;
-		end else if (outclk)
-			ack_buf <= 0;
+		end
 	end
 end
 
@@ -288,8 +295,9 @@ assign out_buf_pos = curr_index - queue_head + pb_head;
 assign outclk = !rst && downstream_rdy && !at_end;
 
 localparam TESTING = 0;
-localparam RESEND_TIMEOUT = TESTING ? 4 : 500000;
-localparam RESYN_TIMEOUT = TESTING ? 20 : 50000000;
+// unit test values are 4 and 20
+localparam RESEND_TIMEOUT = TESTING ? 100 : 500000;
+localparam RESYN_TIMEOUT = TESTING ? 60000 : 50000000;
 
 wire resend_disable, resyn_disable, resyn;
 // wait for 10ms before trying again
