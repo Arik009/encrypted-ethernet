@@ -230,21 +230,27 @@ assign aes_decr_upstream_readclk =
 
 ////// RAM MULTIPLEXING
 
-wire uart_ram_rst, uart_ram_we, uart_ram_readclk, uart_ram_outclk;
-wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr, uart_ram_raddr;
-wire [BYTE_LEN-1:0] uart_ram_win, uart_ram_out;
-wire ffcp_ram_rst, eth_ram_we, ffcp_ram_readclk, ffcp_ram_outclk;
-wire [clog2(RAM_SIZE)-1:0] eth_ram_waddr, ffcp_ram_raddr;
-wire [BYTE_LEN-1:0] eth_ram_win, ffcp_ram_out;
-assign ram_rst = config_transmit ? ffcp_ram_rst : uart_ram_rst;
-assign ram_we = config_transmit ? uart_ram_we : eth_ram_we;
-assign ram_waddr = config_transmit ? uart_ram_waddr : eth_ram_waddr;
-assign ram_win = config_transmit ? uart_ram_win : eth_ram_win;
-assign ram_readclk = config_transmit ? ffcp_ram_readclk : uart_ram_readclk;
-assign ram_raddr = config_transmit ? ffcp_ram_raddr : uart_ram_raddr;
-assign uart_ram_outclk = config_transmit ? 0 : ram_outclk;
+// old uart ram interface for debugging, no longer used
+wire uart_ram_rst, uart_ram_readclk, uart_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] uart_ram_raddr;
+wire [BYTE_LEN-1:0] uart_ram_out;
+assign uart_ram_outclk = 0;
+
+wire rx_ram_rst, uart_ram_we, rx_ram_readclk, rx_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] uart_ram_waddr, rx_ram_raddr;
+wire [BYTE_LEN-1:0] uart_ram_win, rx_ram_out;
+wire ffcp_ram_rst, rx_ram_we, ffcp_ram_readclk, ffcp_ram_outclk;
+wire [clog2(RAM_SIZE)-1:0] rx_ram_waddr, ffcp_ram_raddr;
+wire [BYTE_LEN-1:0] rx_ram_win, ffcp_ram_out;
+assign ram_rst = config_transmit ? ffcp_ram_rst : rx_ram_rst;
+assign ram_we = config_transmit ? uart_ram_we : rx_ram_we;
+assign ram_waddr = config_transmit ? uart_ram_waddr : rx_ram_waddr;
+assign ram_win = config_transmit ? uart_ram_win : rx_ram_win;
+assign ram_readclk = config_transmit ? ffcp_ram_readclk : rx_ram_readclk;
+assign ram_raddr = config_transmit ? ffcp_ram_raddr : rx_ram_raddr;
+assign rx_ram_outclk = config_transmit ? 0 : ram_outclk;
 assign ffcp_ram_outclk = config_transmit ? ram_outclk : 0;
-assign uart_ram_out = ram_out;
+assign rx_ram_out = ram_out;
 assign ffcp_ram_out = ram_out;
 
 wire uart_vram_rst;
@@ -402,6 +408,8 @@ always @(posedge clk) begin
 	else if (eth_rx_ethertype_outclk)
 		ffcp_rx_en <= eth_rx_ethertype_out == ETHERTYPE_FFCP;
 end
+wire ffcp_rx_eth_done;
+assign ffcp_rx_eth_done = ffcp_rx_en && eth_rx_done;
 
 wire ffcp_rx_done;
 assign eth_rx_downstream_done = ffcp_rx_done;
@@ -426,21 +434,60 @@ assign ffcp_rx_syn_outclk =
 assign ffcp_rx_msg_outclk =
 	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_MSG;
 
+wire ffcp_rx_downstream_rst;
+assign ffcp_rx_downstream_rst = eth_rx_downstream_rst || ffcp_rx_syn_outclk;
+
+wire ffcp_rx_commit, ffcp_rx_commit_done;
+
+wire pb_advance_tail_rx, pb_advance_head_rx;
+reg [clog2(FGP_LEN)-1:0] fgp_rx_cnt = 0;
+assign rx_ram_waddr = {pb_tail, fgp_rx_cnt};
+assign rx_ram_we = ffcp_rx_outclk;
+assign rx_ram_win = ffcp_rx_out;
+assign pb_advance_tail_rx = ffcp_rx_eth_done;
+assign pb_advance_head_rx = ffcp_rx_commit;
+always @(posedge clk) begin
+	if (ffcp_rx_downstream_rst)
+		fgp_rx_cnt <= 0;
+	else if (pb_advance_tail_rx)
+		fgp_rx_cnt <= 0;
+	else if (ffcp_rx_outclk)
+		fgp_rx_cnt <= fgp_rx_cnt + 1;
+end
+assign pb_rst_rx = ffcp_rx_downstream_rst;
+
+wire [clog2(RAM_SIZE)-1:0] ffcp_rx_sfm_read_start;
+assign ffcp_rx_sfm_read_start = {pb_head, {clog2(FGP_LEN){1'b0}}};
+wire ffcp_rx_sfm_readclk, ffcp_rx_sfm_outclk;
+wire [BYTE_LEN-1:0] ffcp_rx_sfm_out;
+stream_from_memory #(.RAM_SIZE(RAM_SIZE),
+	.RAM_READ_LATENCY(PACKET_BUFFER_READ_LATENCY)) ffcp_rx_sfm_inst(
+	.clk(clk), .rst(ffcp_rx_downstream_rst), .start(ffcp_rx_commit),
+	.read_start(ffcp_rx_sfm_read_start),
+	.read_end(ffcp_rx_sfm_read_start + FGP_LEN),
+	.readclk(ffcp_rx_sfm_readclk),
+	.ram_outclk(rx_ram_outclk), .ram_out(rx_ram_out),
+	.ram_readclk(rx_ram_readclk), .ram_raddr(rx_ram_raddr),
+	.outclk(ffcp_rx_sfm_outclk), .out(ffcp_rx_sfm_out),
+	.done(ffcp_rx_commit_done));
+assign rx_ram_rst = ffcp_rx_downstream_rst;
+assign ffcp_rx_sfm_readclk = aes_decr_upstream_readclk;
+
 wire fgp_rx_setoff_req;
 wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
 wire fgp_rx_outclk;
 wire [BYTE_LEN-1:0] fgp_rx_out, fgp_rx_offset_out;
 wire fgp_rx_done;
 fgp_rx fgp_rx_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
-	.inclk(ffcp_rx_outclk && !config_transmit), .in(ffcp_rx_out),
+	.clk(clk), .rst(ffcp_rx_downstream_rst),
+	.inclk(ffcp_rx_sfm_outclk && !config_transmit), .in(ffcp_rx_sfm_out),
 	.done(fgp_rx_done),
 	.offset_outclk(fgp_rx_setoff_req), .offset_out(fgp_rx_offset_out),
 	.outclk(fgp_rx_outclk), .out(fgp_rx_out));
 assign fgp_rx_setoff_val = {fgp_rx_offset_out,
 	{clog2(FGP_DATA_LEN_COLORS){1'b0}}};
 
-assign aes_decr_rst = eth_rx_downstream_rst;
+assign aes_decr_rst = ffcp_rx_downstream_rst;
 assign aes_decr_inclk = fgp_rx_outclk;
 assign aes_decr_in = fgp_rx_out;
 assign aes_decr_readclk = 1'b1;
@@ -448,13 +495,13 @@ assign aes_decr_readclk = 1'b1;
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
 bytes_to_colors fgp_btc_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
+	.clk(clk), .rst(ffcp_rx_downstream_rst),
 	.inclk(aes_decr_outclk), .in(aes_decr_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
 assign aes_decr_in_done = 1'b0;
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
-	.clk(clk), .rst(eth_rx_downstream_rst),
+	.clk(clk), .rst(ffcp_rx_downstream_rst),
 	.setoff_req(fgp_rx_setoff_req),
 	.setoff_val(fgp_rx_setoff_val[clog2(VRAM_SIZE)-1:0]),
 	.inclk(fgp_btc_outclk), .in(fgp_btc_out),
@@ -475,20 +522,31 @@ end
 wire ffcp_ack_start;
 wire [FFCP_INDEX_LEN-1:0] ffcp_ack_index;
 ffcp_rx_server ffcp_rx_serv_inst(
-	.clk(clk), .rst(rst), .syn(eth_rx_done && ffcp_rx_en && ffcp_syn_buf),
-	.inclk(eth_rx_done && ffcp_rx_en),
+	.clk(clk), .rst(rst), .syn(ffcp_rx_eth_done && ffcp_syn_buf),
+	.inclk(ffcp_rx_eth_done),
 	.in_index(ffcp_rx_index_buf),
 	.downstream_done(eth_tx_done),
+	.commit(ffcp_rx_commit), .commit_done(ffcp_rx_commit_done),
 	.outclk(ffcp_ack_start), .out_index(ffcp_ack_index));
 
 wire [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail;
-wire pb_advance_tail;
+// pb_advance_head_rx, pb_advance_tail_rx and pb_rst_rx
+// already declared earlier
+wire pb_advance_tail, pb_advance_tail_tx;
+wire pb_advance_head, pb_advance_head_tx;
+wire pb_rst, pb_rst_tx;
+assign pb_advance_tail =
+	config_transmit ? pb_advance_tail_tx : pb_advance_tail_rx;
+assign pb_advance_head =
+	config_transmit ? pb_advance_head_tx : pb_advance_head_rx;
+assign pb_rst = config_transmit ? pb_rst_tx : pb_rst_rx;
 wire pb_inclk;
 wire [clog2(PB_QUEUE_LEN)-1:0] pb_in_head;
 wire pb_almost_full;
-ffcp_tx_queue ffcp_tx_queue_inst(
-	.clk(clk), .rst(rst), .advance_tail(pb_advance_tail),
-	.inclk(pb_inclk), .in_head(pb_in_head),
+ffcp_queue ffcp_queue_inst(
+	.clk(clk), .rst(rst || pb_rst),
+	.advance_head(pb_advance_head), .advance_tail(pb_advance_tail),
+	.inclk(pb_inclk && config_transmit), .in_head(pb_in_head),
 	.almost_full(pb_almost_full),
 	.head(pb_head), .tail(pb_tail));
 wire ffcp_msg_start;
@@ -504,6 +562,7 @@ ffcp_tx_server ffcp_tx_serv_inst(
 	.out_index(ffcp_msg_index),
 	.out_buf_pos(ffcp_tx_buf_pos),
 	.outclk_pb(pb_inclk), .out_pb_head(pb_in_head));
+assign pb_rst_tx = 1'b0;
 assign ffcp_tx_sfm_read_start = {ffcp_tx_buf_pos, {clog2(FGP_LEN){1'b0}}};
 
 assign ffcp_tx_start = config_transmit ? ffcp_msg_start : ffcp_ack_start;
@@ -534,13 +593,14 @@ reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 assign uart_ram_waddr = {pb_tail, uart_rx_cnt};
 assign uart_ram_we = uart_rx_outclk;
 assign uart_ram_win = uart_rx_out;
-assign pb_advance_tail = uart_rx_outclk && uart_rx_cnt == FGP_LEN-1;
+assign pb_advance_tail_tx = uart_rx_outclk && uart_rx_cnt == FGP_LEN-1;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst)
 		uart_rx_cnt <= 0;
 	else if (uart_rx_outclk)
-		uart_rx_cnt <= pb_advance_tail ? 0 : uart_rx_cnt + 1;
+		uart_rx_cnt <= pb_advance_tail_tx ? 0 : uart_rx_cnt + 1;
 end
+assign pb_advance_head_tx = 1'b0;
 
 ////// UART TX <= RAM
 
@@ -581,22 +641,6 @@ graphics_main graphics_main_inst(
 	.ram_readclk(vga_vram_readclk), .ram_raddr(vga_vram_raddr),
 	.vga_col(vga_col),
 	.vga_hsync_out(vga_hsync), .vga_vsync_out(vga_vsync));
-
-////// ETHERNET RX => RAM
-
-wire eth_dtb_outclk, eth_dtb_done;
-wire [BYTE_LEN-1:0] eth_dtb_out;
-dibits_to_bytes eth_dtb(
-	.clk(clk), .rst(rst),
-	.inclk(rmii_outclk), .in(rmii_out), .in_done(rmii_done),
-	.outclk(eth_dtb_outclk), .out(eth_dtb_out),
-	.done(eth_dtb_done));
-stream_to_memory eth_stm_inst(
-	.clk(clk), .rst(rst),
-	.setoff_req(eth_dtb_done), .setoff_val(0),
-	.inclk(eth_dtb_outclk), .in(eth_dtb_out),
-	.ram_we(eth_ram_we), .ram_waddr(eth_ram_waddr),
-	.ram_win(eth_ram_win));
 
 ////// DEBUGGING SIGNALS
 

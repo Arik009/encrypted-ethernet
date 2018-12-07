@@ -122,6 +122,7 @@ module ffcp_rx_server(
 	input clk, rst, syn,
 	input inclk, input [FFCP_INDEX_LEN-1:0] in_index,
 	input downstream_done,
+	input commit_done, output commit,
 	output outclk, output [FFCP_INDEX_LEN-1:0] out_index);
 
 `include "networking.vh"
@@ -144,6 +145,16 @@ always @(posedge clk) begin
 		downstream_rdy <= 1;
 end
 
+reg commit_rdy = 1;
+always @(posedge clk) begin
+	if (rst)
+		commit_rdy <= 1;
+	else if (commit)
+		commit_rdy <= 0;
+	else if (commit_done)
+		commit_rdy <= 1;
+end
+
 // ignore all messages other than those in receive window// be careful of wraparound
 wire ignore, receiving;
 wire [clog2(FFCP_BUFFER_LEN)-1:0] in_index_head_off;
@@ -155,42 +166,47 @@ assign receiving = inclk && !ignore;
 // has advanced past all received packets before acking
 // also wait until self and downstream is ready
 reg ack_buf = 0;
-assign outclk = ack_buf && !curr_received &&
-	rst_done && !receiving && downstream_rdy;
+assign outclk = !receiving && !commit && downstream_rdy && ack_buf &&
+	!rst && !syn && rst_done && !receiving;
 assign out_index = queue_head;
+assign commit = curr_received && commit_rdy &&
+	!rst && !syn && rst_done && !receiving;
 
 always @(posedge clk) begin
 	if (rst || syn) begin
-		// if we're resetting because of a syn, we've already received
-		// the message at index 0
-		queue_head <= syn ? 1 : 0;
+		queue_head <= 0;
 		rst_cnt <= 0;
 		ack_buf <= syn;
 		// clear this now so we don't need to waste a rst_cnt bit for
 		// an extra clear cycle
 		received[FFCP_BUFFER_LEN-1] <= 0;
 	end else if (!rst_done) begin
-		received[rst_cnt] <= 0;
+		// if ack_buf is set, then we reset because of a syn, and
+		// the first packet has been received
+		received[rst_cnt] <= (ack_buf && rst_cnt == 0) ? 1 : 0;
 		rst_cnt <= rst_cnt + 1;
-	end else if (receiving)
-		received[in_index] <= 1;
-	else if (curr_received) begin
-		ack_buf <= 1;
-		received[queue_head] <= 0;
-		queue_head <= queue_head + 1;
-	end else if (outclk)
-		ack_buf <= 0;
+	end else begin
+		if (commit_done)
+			queue_head <= queue_head + 1;
+		if (receiving)
+			received[in_index] <= 1;
+		else if (commit) begin
+			ack_buf <= 1;
+			received[queue_head] <= 0;
+		end else if (outclk)
+			ack_buf <= 0;
+	end
 end
 
 endmodule
 
-// the ffcp_tx_queue manages the packet buffer (PB), intended for use
-// with ffcp_tx_server
-// we only need to be able to advance the tail by one index each time,
+// the ffcp_queue manages the packet buffer (PB), intended for use
+// with ffcp_tx_server or ffcp_rx_server
+// we only need to be able to advance the head/tail by one index each time,
 // or overwrite the head
-module ffcp_tx_queue(
+module ffcp_queue(
 	input clk, rst,
-	input advance_tail,
+	input advance_head, advance_tail,
 	input inclk, input [clog2(PB_QUEUE_LEN)-1:0] in_head,
 	output almost_full,
 	output reg [clog2(PB_QUEUE_LEN)-1:0] head, tail);
@@ -207,6 +223,8 @@ always @(posedge clk) begin
 	end else begin
 		if (inclk)
 			head <= in_head;
+		else if (advance_head)
+			head <= head + 1;
 		if (advance_tail)
 			tail <= tail + 1;
 	end
@@ -225,7 +243,7 @@ module ffcp_tx_server(
 	output outclk, out_syn,
 	output [FFCP_INDEX_LEN-1:0] out_index,
 	output [clog2(PB_QUEUE_LEN)-1:0] out_buf_pos,
-	// the pb outputs are the interface to ffcp_tx_queue
+	// the pb outputs are the interface to ffcp_queue
 	output outclk_pb,
 	output [clog2(PB_QUEUE_LEN)-1:0] out_pb_head);
 
