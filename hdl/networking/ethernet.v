@@ -157,7 +157,7 @@ eth_body_tx eth_tx_inst(
 bytes_to_dibits_coord_buf btd_inst(
 	.clk(clk), .rst(rst || start),
 	.inclk(eth_tx_outclk), .in(eth_tx_out), .in_done(eth_tx_done),
-	.downstream_rdy(main_rdy), .readclk(eth_tx_readclk),
+	.downstream_rdy(main_rdy), .upstream_readclk(eth_tx_readclk),
 	.outclk(btd_outclk), .out(btd_out), .done(btd_done));
 crc32 crc32_inst(
 	.clk(clk), .rst(crc_rst), .shift(crc_shift),

@@ -69,8 +69,65 @@ blocks_to_bytes bltb_inst(
 	.outclk(outclk), .out(out));
 
 endmodule
-            
 
+module aes_combined_bytes_buf(
+	input clk, rst, start,
+	input inclk, input [BYTE_LEN-1:0] in, input in_done,
+	input [BLOCK_LEN-1:0] key,
+	input readclk,
+	output outclk, output [BYTE_LEN-1:0] out, output done,
+	output upstream_readclk,
+	input decr_select);
+
+`include "params.vh"
+
+wire btbl_outclk, btbl_done;
+wire [BLOCK_LEN-1:0] btbl_out;
+bytes_to_blocks btbl_inst(
+	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.outclk(btbl_outclk), .out(btbl_out), .done(btbl_done));
+wire btbl_swb_empty;
+wire btbl_swb_outclk, btbl_swb_done;
+wire [BLOCK_LEN-1:0] btbl_swb_out;
+single_word_buffer #(.DATA_WIDTH(BLOCK_LEN+1)) btbl_swb_inst(
+	.clk(clk), .rst(rst), .clear(btbl_swb_outclk),
+	.inclk(btbl_outclk), .in({btbl_out, btbl_done}),
+	.empty(btbl_swb_empty), .out({btbl_swb_out, btbl_swb_done}));
+
+wire aes_outclk;
+wire [BLOCK_LEN-1:0] aes_out;
+aes_combined aes_inst(
+	.clk(clk), .rst(rst),
+	.inclk(btbl_swb_outclk), .in(btbl_swb_out), .key(key),
+	.outclk(aes_outclk), .out(aes_out),
+	.decr_select(decr_select));
+reg aes_done_buf = 0;
+always @(posedge clk) begin
+	if (btbl_swb_outclk && btbl_swb_done)
+		aes_done_buf <= 1;
+	else if (aes_outclk)
+		aes_done_buf <= 0;
+end
+
+wire bltb_swb_empty;
+wire bltb_swb_outclk, bltb_swb_done;
+wire [BLOCK_LEN-1:0] bltb_swb_out;
+single_word_buffer #(.DATA_WIDTH(BLOCK_LEN+1)) bltb_swb_inst(
+	.clk(clk), .rst(rst), .clear(bltb_swb_outclk),
+	.inclk(aes_outclk), .in({aes_out, aes_done_buf}),
+	.empty(bltb_swb_empty), .out({bltb_swb_out, bltb_swb_done}));
+wire bltb_rdy;
+blocks_to_bytes bltb_inst(
+	.clk(clk), .rst(rst),
+	.inclk(bltb_swb_outclk), .in(bltb_swb_out), .in_done(bltb_swb_done),
+	.readclk(readclk), .outclk(outclk), .out(out), .done(done),
+	.rdy(bltb_rdy));
+assign bltb_swb_outclk = readclk && bltb_rdy && !bltb_swb_empty;
+assign btbl_swb_outclk = (bltb_swb_outclk || bltb_swb_empty) &&
+	!btbl_swb_empty;
+assign upstream_readclk = btbl_swb_outclk || btbl_swb_empty;
+
+endmodule
 
 module aes_block(input [127:0] in, 
                    input [127:0] key,

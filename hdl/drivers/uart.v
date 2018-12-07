@@ -81,7 +81,7 @@ endmodule
 module uart_tx_fast_stream_driver(
 	input clk, clk_120mhz, rst, start,
 	input inclk, input [7:0] in,
-	output txd, output readclk);
+	output txd, output upstream_readclk);
 
 wire driv_rdy;
 uart_tx_fast_driver uart_driv_inst(
@@ -90,7 +90,7 @@ uart_tx_fast_driver uart_driv_inst(
 stream_coord sc_inst(
 	.clk(clk), .rst(rst || start),
 	.downstream_rdy(driv_rdy), .downstream_inclk(inclk),
-	.readclk(readclk));
+	.upstream_readclk(upstream_readclk));
 
 endmodule
 

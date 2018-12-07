@@ -39,6 +39,7 @@ module stream_unpack #(
 	parameter S_LEN = 1,
 	parameter L_LEN = 2) (
 	input clk, rst, inclk, input [L_LEN-1:0] in, input in_done,
+	input readclk,
 	output outclk, output [S_LEN-1:0] out,
 	// done is pulsed after done_in when buffer has been cleared
 	output rdy, done);
@@ -47,31 +48,40 @@ module stream_unpack #(
 
 localparam PACK_RATIO = L_LEN/S_LEN;
 
-reg [L_LEN-S_LEN-1:0] shifted;
+reg [L_LEN-1:0] shifted;
 assign out = inclk ? in[0+:S_LEN] : shifted[0+:S_LEN];
 reg [clog2(PACK_RATIO)-1:0] cnt = 0;
-wire idle;
-assign idle = cnt == 0;
+reg idle = 1;
 assign rdy = idle;
-assign outclk = !idle || inclk;
+assign outclk = (!idle || inclk) && readclk;
 
 // in_done asserted, should assert done when buffer clears
 reg in_done_found = 0;
-assign done = in_done_found && cnt == PACK_RATIO-1;
+assign done = outclk && in_done_found && cnt == PACK_RATIO-1;
 
 always @(posedge clk) begin
 	if (rst) begin
 		cnt <= 0;
 		in_done_found <= 0;
+		idle <= 1;
 	end else begin
 		if (inclk && in_done)
 			in_done_found <= 1;
+		else if (done)
+			in_done_found <= 0;
 		if (outclk) begin
 			cnt <= cnt + 1;
-			if (inclk)
-				shifted <= in[S_LEN+:L_LEN-S_LEN];
-			else
+			if (inclk) begin
+				idle <= 0;
+				shifted <= {{S_LEN{1'b0}}, in[S_LEN+:L_LEN-S_LEN]};
+			end else begin
 				shifted <= {{S_LEN{1'b0}}, shifted[S_LEN+:L_LEN-2*S_LEN]};
+				if (cnt == PACK_RATIO-1)
+					idle <= 1;
+			end
+		end else if (inclk) begin
+			idle <= 0;
+			shifted <= in;
 		end
 	end
 end
@@ -94,12 +104,14 @@ endmodule
 // convert a bytestream to a dibit stream
 module bytes_to_dibits(
 	input clk, rst, inclk, input [BYTE_LEN-1:0] in, input in_done,
+	input readclk,
 	output outclk, output [1:0] out, output rdy, done);
 
 `include "params.vh"
 
 stream_unpack #(.S_LEN(2), .L_LEN(BYTE_LEN)) unpack_inst(
 	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.readclk(readclk),
 	.outclk(outclk), .out(out), .rdy(rdy), .done(done));
 
 endmodule
@@ -118,12 +130,14 @@ endmodule
 
 module blocks_to_bytes(
 	input clk, rst, inclk, input [BLOCK_LEN-1:0] in, input in_done,
+	input readclk,
 	output outclk, output [BYTE_LEN-1:0] out, output rdy, done);
 
 `include "params.vh"
 
 stream_unpack #(.S_LEN(BYTE_LEN), .L_LEN(BLOCK_LEN)) unpack_inst(
 	.clk(clk), .rst(rst), .inclk(inclk), .in(in), .in_done(in_done),
+	.readclk(readclk),
 	.outclk(outclk), .out(out), .rdy(rdy), .done(done));
 
 endmodule
@@ -266,17 +280,17 @@ endmodule
 module stream_coord(
 	input clk, rst,
 	input downstream_rdy, downstream_inclk,
-	output readclk);
+	output upstream_readclk);
 
 reg waiting = 0;
-assign readclk = !rst && (waiting ? 0 : downstream_rdy);
+assign upstream_readclk = !rst && (waiting ? 0 : downstream_rdy);
 
 always @(posedge clk) begin
 	if (rst)
 		waiting <= 0;
 	else if (downstream_inclk)
 		waiting <= 0;
-	else if (readclk)
+	else if (upstream_readclk)
 		waiting <= 1;
 end
 
@@ -292,7 +306,7 @@ module stream_coord_buf #(
 	input downstream_rdy,
 	output outclk, output [DATA_WIDTH-1:0] out,
 	output done,
-	output readclk);
+	output upstream_readclk);
 
 wire swb_empty;
 stream_coord sc_inst(
@@ -301,7 +315,7 @@ stream_coord sc_inst(
 	// so the buffer is ready
 	.downstream_rdy(swb_empty || downstream_rdy),
 	.downstream_inclk(inclk),
-	.readclk(readclk));
+	.upstream_readclk(upstream_readclk));
 single_word_buffer #(.DATA_WIDTH(DATA_WIDTH+1)) swb_inst(
 	.clk(clk), .rst(rst), .clear(downstream_rdy),
 	.inclk(inclk), .in({in, in_done}),
@@ -311,29 +325,48 @@ assign outclk = !rst && !swb_empty && downstream_rdy;
 endmodule
 
 // coordinated, buffered version of bytes_to_dibits
+module stream_unpack_coord_buf #(
+	parameter S_LEN = 1,
+	parameter L_LEN = 2) (
+	input clk, rst, inclk,
+	input [L_LEN-1:0] in,
+	input in_done, downstream_rdy,
+	output upstream_readclk, outclk,
+	output [S_LEN-1:0] out,
+	output done);
+
+wire su_rdy, su_inclk, su_in_done;
+wire [L_LEN-1:0] su_in;
+stream_coord_buf #(.DATA_WIDTH(L_LEN)) su_scb_inst(
+	.clk(clk), .rst(rst),
+	.inclk(inclk), .in(in),
+	.in_done(in_done), .downstream_rdy(su_rdy && downstream_rdy),
+	.outclk(su_inclk), .out(su_in), .done(su_in_done),
+	.upstream_readclk(upstream_readclk));
+stream_unpack #(.S_LEN(S_LEN), .L_LEN(L_LEN)) su_inst (
+	.clk(clk), .rst(rst),
+	.inclk(su_inclk), .in(su_in), .in_done(su_in_done),
+	.readclk(1'b1),
+	.outclk(outclk), .out(out),
+	.rdy(su_rdy), .done(done));
+
+endmodule
+
 module bytes_to_dibits_coord_buf(
 	input clk, rst, inclk,
 	input [BYTE_LEN-1:0] in,
 	input in_done, downstream_rdy,
-	output readclk, outclk,
+	output upstream_readclk, outclk,
 	output [1:0] out,
 	output done);
 
 `include "params.vh"
 
-wire btd_rdy, btd_inclk, btd_in_done;
-wire [BYTE_LEN-1:0] btd_in;
-stream_coord_buf #(.DATA_WIDTH(BYTE_LEN)) btd_scb_inst(
+stream_unpack_coord_buf #(.S_LEN(2), .L_LEN(BYTE_LEN)) sucb_inst (
 	.clk(clk), .rst(rst),
-	.inclk(inclk), .in(in),
-	.in_done(in_done), .downstream_rdy(btd_rdy && downstream_rdy),
-	.outclk(btd_inclk), .out(btd_in), .done(btd_in_done),
-	.readclk(readclk));
-bytes_to_dibits btd_inst(
-	.clk(clk), .rst(rst),
-	.inclk(btd_inclk), .in(btd_in), .in_done(btd_in_done),
-	.outclk(outclk), .out(out),
-	.rdy(btd_rdy), .done(done));
+	.inclk(inclk), .in(in), .in_done(in_done),
+	.downstream_rdy(downstream_rdy), .upstream_readclk(upstream_readclk),
+	.outclk(outclk), .out(out), .done(done));
 
 endmodule
 

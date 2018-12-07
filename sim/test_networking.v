@@ -25,6 +25,7 @@ wire btd_idle;
 bytes_to_dibits btd_inst(
 	.clk(clk), .rst(rst), .inclk(read_ready),
 	.in(read_out), .in_done(done_in),
+	.readclk(1'b1),
 	.out(dibit_out), .outclk(byte_clk), .rdy(btd_idle),
 	.done(done_out));
 wire [31:0] crc;

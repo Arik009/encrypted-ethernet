@@ -192,25 +192,41 @@ packet_synth_rom_driver psr_inst(
 wire [BLOCK_LEN-1:0] aes_key;
 assign aes_key = {KEY[8+:BLOCK_LEN-8], SW[8+:8]};
 
-wire aes_rst, aes_inclk, aes_outclk;
+wire aes_rst, aes_inclk, aes_outclk, aes_in_done, aes_done;
 wire [BYTE_LEN-1:0] aes_in, aes_out;
+wire aes_upstream_readclk, aes_readclk;
 wire aes_decr_select;
 assign aes_decr_select = !config_transmit;
-aes_combined_bytes aes_inst(
+aes_combined_bytes_buf aes_inst(
 	.clk(clk), .rst(rst || aes_rst),
-	.inclk(aes_inclk), .in(aes_in), .key(aes_key),
-	.outclk(aes_outclk), .out(aes_out), .decr_select(aes_decr_select));
+	.inclk(aes_inclk), .in(aes_in), .in_done(aes_in_done),
+	.key(aes_key),
+	.readclk(aes_readclk),
+	.outclk(aes_outclk), .out(aes_out), .done(aes_done),
+	.upstream_readclk(aes_upstream_readclk),
+	.decr_select(aes_decr_select));
 
 wire aes_encr_rst, aes_decr_rst;
 wire aes_encr_inclk, aes_decr_inclk, aes_encr_outclk, aes_decr_outclk;
+wire aes_encr_in_done, aes_decr_in_done, aes_encr_done, aes_decr_done;
+wire aes_encr_readclk, aes_decr_readclk;
+wire aes_encr_upstream_readclk, aes_decr_upstream_readclk;
 wire [BYTE_LEN-1:0] aes_encr_in, aes_decr_in, aes_encr_out, aes_decr_out;
 assign aes_rst = aes_decr_select ? aes_decr_rst : aes_encr_rst;
 assign aes_inclk = aes_decr_select ? aes_decr_inclk : aes_encr_inclk;
 assign aes_in = aes_decr_select ? aes_decr_in : aes_encr_in;
+assign aes_in_done = aes_decr_select ? aes_decr_in_done : aes_encr_in_done;
+assign aes_readclk = aes_decr_select ? aes_decr_readclk : aes_encr_readclk;
 assign aes_encr_outclk = aes_decr_select ? 0 : aes_outclk;
 assign aes_decr_outclk = aes_decr_select ? aes_outclk : 0;
 assign aes_encr_out = aes_decr_select ? 0 : aes_out;
 assign aes_decr_out = aes_decr_select ? aes_out : 0;
+assign aes_encr_done = aes_decr_select ? 0 : aes_done;
+assign aes_decr_done = aes_decr_select ? aes_done : 0;
+assign aes_encr_upstream_readclk =
+	aes_decr_select ? 0 : aes_upstream_readclk;
+assign aes_decr_upstream_readclk =
+	aes_decr_select ? aes_upstream_readclk : 0;
 
 ////// RAM MULTIPLEXING
 
@@ -292,16 +308,64 @@ stream_from_memory #(.RAM_SIZE(RAM_SIZE),
 	.ram_readclk(ffcp_ram_readclk), .ram_raddr(ffcp_ram_raddr),
 	.outclk(ffcp_tx_sfm_outclk), .out(ffcp_tx_sfm_out),
 	.done(ffcp_tx_sfm_done));
+
+wire ffcp_tx_fgp_offset_outclk;
+wire [BYTE_LEN-1:0] ffcp_tx_fgp_offset_out;
+wire ffcp_tx_fgp_outclk, ffcp_tx_fgp_done;
+wire [BYTE_LEN-1:0] ffcp_tx_fgp_out;
+// use an fgp_rx to split the data from the offset
+fgp_rx fgp_rx(
+	.clk(clk), .rst(rst),
+	.inclk(ffcp_tx_sfm_outclk), .in(ffcp_tx_sfm_out),
+	.offset_outclk(ffcp_tx_fgp_offset_outclk),
+	.offset_out(ffcp_tx_fgp_offset_out),
+	.outclk(ffcp_tx_fgp_outclk), .out(ffcp_tx_fgp_out),
+	.done(ffcp_tx_fgp_done));
+reg fgp_tx_reading_metadata = 0;
+always @(posedge clk) begin
+	if (rst || ffcp_tx_fgp_offset_outclk)
+		fgp_tx_reading_metadata <= 0;
+	else if (ffcp_tx_start)
+		fgp_tx_reading_metadata <= 1;
+end
+assign ffcp_tx_sfm_readclk =
+	fgp_tx_reading_metadata || aes_encr_upstream_readclk;
+
+assign aes_encr_rst = 1'b0;
+assign aes_encr_inclk = ffcp_tx_fgp_outclk && !fgp_tx_reading_metadata;
+assign aes_encr_in = ffcp_tx_fgp_out;
+assign aes_encr_in_done = ffcp_tx_fgp_done;
+
+wire fgp_tx_start;
+assign fgp_tx_start = ffcp_tx_fgp_offset_outclk;
+// delay AES readclk since every transmit component should have
+// exactly two clock cycles of delay
+wire aes_encr_readclk_pd;
+delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) aes_encr_readclk_delay(
+	.clk(clk), .rst(rst || fgp_tx_start),
+	.in(aes_encr_readclk_pd), .out(aes_encr_readclk));
+
+wire fgp_tx_readclk, fgp_tx_outclk, fgp_tx_done;
+wire [BYTE_LEN-1:0] fgp_tx_out;
+fgp_tx fgp_tx_inst(
+	.clk(clk), .rst(rst),
+	.start(fgp_tx_start), .offset(ffcp_tx_fgp_offset_out),
+	.inclk(aes_encr_outclk), .in(aes_encr_out),
+	.in_done(aes_encr_done),
+	.readclk(fgp_tx_readclk),
+	.outclk(fgp_tx_outclk), .out(fgp_tx_out), .done(fgp_tx_done),
+	.upstream_readclk(aes_encr_readclk_pd));
+
 wire ffcp_tx_readclk, ffcp_tx_outclk, ffcp_tx_done;
 wire [BYTE_LEN-1:0] ffcp_tx_out;
 ffcp_tx ffcp_tx_inst(
 	.clk(clk), .rst(rst), .start(ffcp_tx_start),
-	.inclk(ffcp_tx_sfm_outclk), .in(ffcp_tx_sfm_out),
-	.in_done(ffcp_tx_sfm_done),
+	.inclk(fgp_tx_outclk), .in(fgp_tx_out),
+	.in_done(fgp_tx_done),
 	.ffcp_type(ffcp_tx_type), .ffcp_index(ffcp_tx_index),
 	.readclk(ffcp_tx_readclk),
 	.outclk(ffcp_tx_outclk), .out(ffcp_tx_out),
-	.upstream_readclk(ffcp_tx_sfm_readclk), .done(ffcp_tx_done));
+	.upstream_readclk(fgp_tx_readclk), .done(ffcp_tx_done));
 
 wire eth_tx_done;
 eth_tx eth_tx_inst(
@@ -379,6 +443,7 @@ assign fgp_rx_setoff_val = {fgp_rx_offset_out,
 assign aes_decr_rst = eth_rx_downstream_rst;
 assign aes_decr_inclk = fgp_rx_outclk;
 assign aes_decr_in = fgp_rx_out;
+assign aes_decr_readclk = 1'b1;
 
 wire fgp_btc_outclk;
 wire [COLOR_LEN-1:0] fgp_btc_out;
@@ -386,6 +451,7 @@ bytes_to_colors fgp_btc_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
 	.inclk(aes_decr_outclk), .in(aes_decr_out),
 	.outclk(fgp_btc_outclk), .out(fgp_btc_out));
+assign aes_decr_in_done = 1'b0;
 stream_to_memory
 	#(.RAM_SIZE(VRAM_SIZE), .WORD_LEN(COLOR_LEN)) fgp_stm_inst(
 	.clk(clk), .rst(eth_rx_downstream_rst),
@@ -464,37 +530,15 @@ pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
 wire uart_rx_downstream_rst;
 assign uart_rx_downstream_rst = rst || !uart_rx_active;
 
-wire uart_rx_fgp_offset_outclk;
-wire [BYTE_LEN-1:0] uart_rx_fgp_offset_out;
-wire uart_rx_fgp_outclk;
-wire [BYTE_LEN-1:0] uart_rx_fgp_out;
-// use an fgp_rx to split the data from the offset
-fgp_rx encr_fgp_rx(
-	.clk(clk), .rst(uart_rx_downstream_rst),
-	.inclk(uart_rx_outclk), .in(uart_rx_out),
-	.offset_outclk(uart_rx_fgp_offset_outclk),
-	.offset_out(uart_rx_fgp_offset_out),
-	.outclk(uart_rx_fgp_outclk), .out(uart_rx_fgp_out));
-
-assign aes_encr_rst = uart_rx_downstream_rst;
-assign aes_encr_inclk = uart_rx_fgp_outclk;
-assign aes_encr_in = uart_rx_fgp_out;
-
-wire encr_fgp_outclk;
-assign encr_fgp_outclk = uart_rx_fgp_offset_outclk || aes_encr_outclk;
-wire [BYTE_LEN-1:0] encr_fgp_out;
-assign encr_fgp_out = uart_rx_fgp_offset_outclk ?
-	uart_rx_fgp_offset_out : aes_encr_out;
-
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 assign uart_ram_waddr = {pb_tail, uart_rx_cnt};
-assign uart_ram_we = encr_fgp_outclk;
-assign uart_ram_win = encr_fgp_out;
-assign pb_advance_tail = encr_fgp_outclk && uart_rx_cnt == FGP_LEN-1;
+assign uart_ram_we = uart_rx_outclk;
+assign uart_ram_win = uart_rx_out;
+assign pb_advance_tail = uart_rx_outclk && uart_rx_cnt == FGP_LEN-1;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst)
 		uart_rx_cnt <= 0;
-	else if (encr_fgp_outclk)
+	else if (uart_rx_outclk)
 		uart_rx_cnt <= pb_advance_tail ? 0 : uart_rx_cnt + 1;
 end
 
@@ -525,7 +569,7 @@ assign uart_ram_rst = uart_tx_start;
 uart_tx_fast_stream_driver uart_tx_inst(
 	.clk(clk), .clk_120mhz(clk_120mhz), .rst(rst), .start(uart_tx_start),
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(UART_RXD_OUT),
-	.readclk(uart_tx_readclk));
+	.upstream_readclk(uart_sfm_readclk));
 
 ////// VRAM => VGA
 
