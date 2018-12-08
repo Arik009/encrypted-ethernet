@@ -29,16 +29,7 @@ module main(
 	output UART_RXD_OUT, UART_CTS,
 	output ETH_TXEN,
 	output [1:0] ETH_TXD,
-	output ETH_MDC, ETH_MDIO,
-	inout [15:0] ddr2_dq,
-	inout [1:0] ddr2_dqs_n, ddr2_dqs_p,
-	output [12:0] ddr2_addr,
-	output [2:0] ddr2_ba,
-	output ddr2_ras_n, ddr2_cas_n, ddr2_we_n,
-	output [0:0] ddr2_ck_p, ddr2_ck_n, ddr2_cke, ddr2_cs_n,
-	output [1:0] ddr2_dm,
-	output [0:0] ddr2_odt
-	);
+	output ETH_MDC, ETH_MDIO);
 
 ////// INCLUDES
 
@@ -693,75 +684,5 @@ assign hex_display_data = {
 assign JB = {
 	8'h0
 };
-
-endmodule
-
-// this test module is just used to check the space usage of the
-// AES modules
-module main_test_aes(
-	input CLK100MHZ,
-	input [15:0] SW,
-	input BTNC, BTNU, BTNL, BTNR, BTND,
-	output [7:0] JB,
-	output [3:0] VGA_R,
-	output [3:0] VGA_B,
-	output [3:0] VGA_G,
-	output VGA_HS,
-	output VGA_VS,
-	output LED16_B, LED16_G, LED16_R,
-	output LED17_B, LED17_G, LED17_R,
-	output [15:0] LED,
-	output [7:0] SEG,  // segments A-G (0-6), DP (7)
-	output [7:0] AN,	// Display 0-7
-	inout ETH_CRSDV, ETH_RXERR,
-	inout [1:0] ETH_RXD,
-	output ETH_REFCLK, ETH_INTN, ETH_RSTN,
-	input UART_TXD_IN, UART_RTS,
-	output UART_RXD_OUT, UART_CTS,
-	output ETH_TXEN,
-	output [1:0] ETH_TXD,
-	output ETH_MDC, ETH_MDIO,
-	inout [15:0] ddr2_dq,
-	inout [1:0] ddr2_dqs_n, ddr2_dqs_p,
-	output [12:0] ddr2_addr,
-	output [2:0] ddr2_ba,
-	output ddr2_ras_n, ddr2_cas_n, ddr2_we_n,
-	output [0:0] ddr2_ck_p, ddr2_ck_n, ddr2_cke, ddr2_cs_n,
-	output [1:0] ddr2_dm,
-	output [0:0] ddr2_odt
-	);
-
-wire clk_50mhz;
-
-// the main clock for FPGA logic will be 50MHz
-wire clk;
-assign clk = clk_50mhz;
-
-// 50MHz clock for Ethernet receiving
-clk_wiz_0 clk_wiz_inst(
-	.reset(0),
-	.clk_in1(CLK100MHZ),
-	.clk_out1(clk_50mhz));
-
-reg [127:0] aes_in, aes_key;
-wire [127:0] aes_out;
-reg [6:0] aes_cnt = 0;
-// aes_encrypt_block block(.in(aes_in), .out(aes_out), .key(aes_key));
-reg [127:0] aes_out_shift;
-reg jb_out;
-assign JB[0] = jb_out;
-
-wire tx_clk;
-clock_divider #(.PULSE_PERIOD(128)) cd_inst(
-	.clk(clk), .rst(1'b0), .en(1'b1), .out(block_clk));
-
-always @(posedge clk) begin
-	aes_in <= {aes_in[126:0], SW[0]};
-	aes_key <= {aes_key[126:0], SW[1]};
-	if (block_clk)
-		aes_out_shift <= aes_out;
-	{aes_out_shift[126:0], jb_out} <= aes_out_shift;
-	aes_cnt <= aes_cnt + 1;
-end
 
 endmodule

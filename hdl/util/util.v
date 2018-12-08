@@ -156,18 +156,3 @@ always @(posedge clk) begin
 end
 
 endmodule
-
-module strcmp #(
-	parameter DATA_WIDTH = 1) (
-	input clk, rst, inclk,
-	input [DATA_WIDTH-1:0] in1, in2,
-	output reg match = 1);
-
-always @(posedge clk) begin
-	if (rst)
-		match <= 1;
-	else if (inclk && in1 != in2)
-		match <= 0;
-end
-
-endmodule

@@ -369,27 +369,3 @@ stream_unpack_coord_buf #(.S_LEN(2), .L_LEN(BYTE_LEN)) sucb_inst (
 	.outclk(outclk), .out(out), .done(done));
 
 endmodule
-
-// passes a number of words through, asserting done when done
-module read_n_words #(
-	parameter NUM_WORDS = 1,
-	parameter WORD_LEN = 1) (
-	input clk, rst, inclk,
-	input [WORD_LEN-1:0] in,
-	output done, outclk, output [WORD_LEN-1:0] out);
-
-`include "params.vh"
-
-reg [clog2(NUM_WORDS)-1:0] cnt;
-assign outclk = inclk;
-assign out = in;
-assign done = inclk && cnt == NUM_WORDS-1;
-
-always @(posedge clk) begin
-	if (rst || done)
-		cnt <= 0;
-	else if (inclk)
-		cnt <= cnt + 1;
-end
-
-endmodule
