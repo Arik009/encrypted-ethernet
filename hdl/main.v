@@ -656,7 +656,7 @@ graphics_main graphics_main_inst(
 ////// DEBUGGING SIGNALS
 
 wire aes_rst_pe;
-pulse_extender aes_rst_pe(
+pulse_extender aes_rst_pe_inst(
 	.clk(clk), .rst(rst), .in(aes_rst), .out(aes_rst_pe));
 
 wire blink;

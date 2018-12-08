@@ -34,12 +34,11 @@ initial begin
     in_clk = 1;
     #10
     in_clk = 0;
-	#800
+	#1500
 	
-	
-	
-
+    rst = 1;
 	$stop();
+	
 end
 
 endmodule
@@ -71,14 +70,17 @@ initial begin
 	#250
 	rst = 0;
     key = 1234343;
-    keyout_sel = 1;
+    keyout_sel = 0;
     start = 0;
     #10
     start = 1;
     #10
     start = 0;
     
-	#800
+	#200
+	keyout_sel = 1;
+	#10
+	keyout_sel = 2;
 
 	$stop();
 end

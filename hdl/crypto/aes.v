@@ -10,6 +10,56 @@ module aes_combined(
 `include "params.vh"
 
   reg [127:0] aes_in;
+  wire [127:0] aes_key;
+  wire [127:0] aes_out;
+  reg [4:0] count;
+  reg crypting;
+  reg [4:0] key_counter;
+  
+  always @(posedge clk) begin
+    if(rst) begin
+        count <= 0;
+        crypting <= 0;
+        key_counter <= 0;
+    end
+    else if (inclk) begin
+        count <= 0;
+        crypting <= 1;
+        key_counter <= 0;
+        aes_in <= in;
+
+    end
+    else if (crypting && key_counter < 12) begin
+        key_counter <= key_counter + 1;
+    end
+    else if (crypting && key_counter == 12) begin
+            aes_in <= aes_in ^ aes_key;
+            key_counter <= key_counter + 1;
+            count <= count + 1;
+    end
+    else if (crypting && count < 11) begin
+        count <= count + 1;
+        aes_in <= aes_out;
+    end
+    else crypting <= 0;
+  end      
+  aes_block block(.in((count == 0) ? (aes_in ^ aes_key) : aes_in), .key(aes_key), .block_num(count-1), .out(aes_out), .decr_select(decr_select));
+  keygen round_key(.clk(clk), .start(inclk), .key(key), .keyout_sel(decr_select ? 10-count : count), .keyout_selected(aes_key));
+  
+  assign out = (count == 10) ? aes_out : 0;
+  assign outclk = (count == 10);
+
+endmodule
+
+module aes_combined_no_roundkey(
+	input clk, rst,
+	input inclk, input [BLOCK_LEN-1:0] in, key,
+	output outclk, output [BLOCK_LEN-1:0] out,
+	input decr_select);
+
+`include "params.vh"
+
+  reg [127:0] aes_in;
   reg [127:0] aes_key;
   wire [127:0] aes_out;
   reg [4:0] count;
@@ -33,6 +83,7 @@ module aes_combined(
     else crypting <= 0;
   end      
   aes_block block(.in(aes_in), .key(aes_key), .block_num(count), .out(aes_out), .decr_select(decr_select));
+  
   assign out = (count == 9) ? aes_out : 0;
   assign outclk = (count == 9);
 
@@ -179,6 +230,8 @@ module keygen(input clk,
     
     reg [127:0] keyout [10:0];
     
+    wire [31:0] temp;
+    
     assign keyout_selected = keyout[keyout_sel];
     always @(posedge clk) begin
         if (start) begin
@@ -205,7 +258,6 @@ module keygen(input clk,
     end
     
     wire [7:0] temp0, temp1, temp2, temp3;
-    wire [31:0] temp;
     
     sbox q0( .in(keyout[round_num-1][63:56]),.out(temp0));
     sbox q1( .in(keyout[round_num-1][63:56]),.out(temp1));
@@ -226,7 +278,7 @@ module keygen(input clk,
             4'h7: rcon=128'h40_00_00_00_00;
             4'h8: rcon=128'h80_00_00_00_00;
             4'h9: rcon=128'h1b_00_00_00_00;
-            4'h10: rcon=128'h36_00_00_00_00;
+            4'ha: rcon=128'h36_00_00_00_00;
             default: rcon = 0;
         endcase
     end
