@@ -3,6 +3,7 @@
 // 	additionally, if on, uart debug output will read from vram,
 // 	otherwise from packet buffer
 // SW[2]: UART_CTS override (to test flow control)
+// SW[3]: enable CBC mode
 // SW[15:8]: last bits of key for aes
 // BTNC: dump ram
 // BTNL: send sample packet
@@ -69,7 +70,7 @@ clk_wiz_0 clk_wiz_inst(
 
 ////// RESET
 
-wire sw0, sw1, sw2;
+wire sw0, sw1, sw2, sw3;
 wire [7:0] swkey;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
 	.clk(clk), .rst(1'b0), .in(SW[0]), .out(sw0));
@@ -77,22 +78,31 @@ delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
 	.clk(clk), .rst(1'b0), .in(SW[1]), .out(sw1));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw2_sync(
 	.clk(clk), .rst(1'b0), .in(SW[2]), .out(sw2));
+delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw3_sync(
+	.clk(clk), .rst(1'b0), .in(SW[3]), .out(sw3));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN), .DATA_WIDTH(8)) swkey_sync(
 	.clk(clk), .rst(1'b0), .in(SW[8+:8]), .out(swkey));
 
 wire config_transmit;
 assign config_transmit = sw1;
+wire cbc_enable;
+assign cbc_enable = sw3;
 
 reg prev_sw1 = 0;
+reg prev_sw3 = 0;
 reg [7:0] prev_swkey = 0;
 always @(posedge clk) begin
 	prev_sw1 <= sw1;
+	prev_sw3 <= sw3;
 	prev_swkey <= swkey;
 end
 
 // reset device when configuration is changed
 wire config_change_reset;
-assign config_change_reset = sw1 != prev_sw1 || swkey != prev_swkey;
+assign config_change_reset =
+	sw1 != prev_sw1 ||
+	sw3 != prev_sw3 ||
+	swkey != prev_swkey;
 
 wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
@@ -210,7 +220,7 @@ aes_combined_bytes_buf aes_inst(
 	.readclk(aes_readclk),
 	.outclk(aes_outclk), .out(aes_out), .done(aes_done),
 	.upstream_readclk(aes_upstream_readclk),
-	.decr_select(aes_decr_select));
+	.decr_select(aes_decr_select), .cbc_enable(cbc_enable));
 
 wire aes_encr_rst, aes_decr_rst;
 wire aes_encr_inclk, aes_decr_inclk, aes_encr_outclk, aes_decr_outclk;

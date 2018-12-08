@@ -93,7 +93,7 @@ module aes_chain(
 	input clk, rst,
 	input inclk, input [BLOCK_LEN-1:0] in, key,
 	output outclk, output [BLOCK_LEN-1:0] out,
-	input decr_select);
+	input decr_select, cbc_enable);
 
 `include "params.vh"
 
@@ -104,10 +104,10 @@ reg [BLOCK_LEN-1:0] prev = 0;
 wire [BLOCK_LEN-1:0] aes_out;
 aes_combined aes_inst(
 	.clk(clk), .rst(rst),
-	.inclk(inclk), .in(decr_select ? in : (in ^ prev)),
+	.inclk(inclk), .in((!decr_select && cbc_enable) ? (in ^ prev) : in),
 	.key(key),
 	.outclk(outclk), .out(aes_out), .decr_select(decr_select));
-assign out = decr_select ? (aes_out ^ prev_prev) : aes_out;
+assign out = (decr_select && cbc_enable) ? (aes_out ^ prev_prev) : aes_out;
 
 always @(posedge clk) begin
 	if (rst) begin
@@ -131,7 +131,7 @@ module aes_combined_bytes_buf(
 	input readclk,
 	output outclk, output [BYTE_LEN-1:0] out, output done,
 	output upstream_readclk,
-	input decr_select);
+	input decr_select, cbc_enable);
 
 `include "params.vh"
 
@@ -154,7 +154,7 @@ aes_chain aes_inst(
 	.clk(clk), .rst(rst),
 	.inclk(btbl_swb_outclk), .in(btbl_swb_out), .key(key),
 	.outclk(aes_outclk), .out(aes_out),
-	.decr_select(decr_select));
+	.decr_select(decr_select), .cbc_enable(cbc_enable));
 reg aes_done_buf = 0;
 always @(posedge clk) begin
 	if (btbl_swb_outclk && btbl_swb_done)
