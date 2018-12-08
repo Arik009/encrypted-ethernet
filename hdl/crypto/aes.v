@@ -12,9 +12,9 @@ module aes_combined(
   reg [127:0] aes_in;
   wire [127:0] aes_key;
   wire [127:0] aes_out;
-  reg [4:0] count;
-  reg crypting;
-  reg [4:0] key_counter;
+  reg [4:0] count = 0;
+  reg crypting = 0;
+  reg [4:0] key_counter = 0;
   
   always @(posedge clk) begin
     if(rst) begin
@@ -22,19 +22,15 @@ module aes_combined(
         crypting <= 0;
         key_counter <= 0;
     end
+	else if (key_counter < 12)
+		key_counter <= key_counter + 1;
     else if (inclk) begin
         count <= 0;
         crypting <= 1;
-        key_counter <= 0;
         aes_in <= in;
-
     end
-    else if (crypting && key_counter < 12) begin
-        key_counter <= key_counter + 1;
-    end
-    else if (crypting && key_counter == 12) begin
+    else if (crypting && count == 0) begin
             aes_in <= aes_in ^ aes_key;
-            key_counter <= key_counter + 1;
             count <= count + 1;
     end
     else if (crypting && count < 11) begin
@@ -44,7 +40,7 @@ module aes_combined(
     else crypting <= 0;
   end      
   aes_block block(.in(aes_in), .key(aes_key), .block_num(count-1), .out(aes_out), .decr_select(decr_select));
-  keygen round_key(.clk(clk), .start(inclk), .key(key), .keyout_sel(decr_select ? 10-count : count), .keyout_selected(aes_key));
+  keygen round_key(.clk(clk), .start(key_counter == 0), .key(key), .keyout_sel(decr_select ? 10-count : count), .keyout_selected(aes_key));
   
   assign out = (count == 10) ? aes_out : 0;
   assign outclk = (count == 10);
@@ -62,8 +58,8 @@ module aes_combined_no_roundkey(
   reg [127:0] aes_in;
   reg [127:0] aes_key;
   wire [127:0] aes_out;
-  reg [4:0] count;
-  reg crypting;
+  reg [4:0] count = 0;
+  reg crypting = 0;
   
   always @(posedge clk) begin
     if(rst) begin
