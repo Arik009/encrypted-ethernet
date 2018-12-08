@@ -46,6 +46,9 @@ module aes_chain(
 
 `include "params.vh"
 
+// need additional buffering for prev since there might be time between
+// inclk and outclk
+reg [BLOCK_LEN-1:0] prev_prev = 0;
 reg [BLOCK_LEN-1:0] prev = 0;
 wire [BLOCK_LEN-1:0] aes_out;
 aes_combined aes_inst(
@@ -53,51 +56,23 @@ aes_combined aes_inst(
 	.inclk(inclk), .in(decr_select ? in : (in ^ prev)),
 	.key(key),
 	.outclk(outclk), .out(aes_out), .decr_select(decr_select));
-assign out = decr_select ? (aes_out ^ prev) : aes_out;
+assign out = decr_select ? (aes_out ^ prev_prev) : aes_out;
 
 always @(posedge clk) begin
-	if (rst)
-		prev<= 0;
-	else if (decr_select && inclk)
+	if (rst) begin
+		prev_prev <= 0;
+		prev <= 0;
+	end else if (decr_select && inclk) begin
+		prev_prev <= prev;
 		prev <= in;
-	else if (!decr_select && outclk)
+	end else if (!decr_select && outclk)
 		prev <= out;
 end
 
 endmodule
 
-// bytes interface for aes_combined
-module aes_combined_bytes(
-	input clk, rst,
-	input inclk, input [BYTE_LEN-1:0] in, input [BLOCK_LEN-1:0] key,
-	output outclk, output [BYTE_LEN-1:0] out, input decr_select);
-
-`include "params.vh"
-
-wire btbl_outclk;
-wire [BLOCK_LEN-1:0] btbl_out;
-bytes_to_blocks btbl_inst(
-	.clk(clk), .rst(rst),
-	.inclk(inclk), .in(in),
-	.in_done(1'b0),
-	.outclk(btbl_outclk), .out(btbl_out));
-wire aes_outclk;
-wire [BLOCK_LEN-1:0] aes_out;
-aes_chain aes_inst(
-	.clk(clk), .rst(rst),
-	.inclk(btbl_outclk), .in(btbl_out), .key(key),
-	.outclk(aes_outclk), .out(aes_out),
-	.decr_select(decr_select));
-wire bltb_outclk;
-wire [BYTE_LEN-1:0] bltb_out;
-blocks_to_bytes bltb_inst(
-	.clk(clk), .rst(rst),
-	.inclk(aes_outclk), .in(aes_out),
-	.in_done(1'b0),
-	.outclk(outclk), .out(out));
-
-endmodule
-
+// buffered version of bytes interface for aes_combined
+// for use with network stack
 module aes_combined_bytes_buf(
 	input clk, rst,
 	input inclk, input [BYTE_LEN-1:0] in, input in_done,
@@ -124,7 +99,7 @@ single_word_buffer #(.DATA_WIDTH(BLOCK_LEN+1)) btbl_swb_inst(
 
 wire aes_outclk;
 wire [BLOCK_LEN-1:0] aes_out;
-aes_combined aes_inst(
+aes_chain aes_inst(
 	.clk(clk), .rst(rst),
 	.inclk(btbl_swb_outclk), .in(btbl_swb_out), .key(key),
 	.outclk(aes_outclk), .out(aes_out),

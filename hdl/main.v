@@ -69,24 +69,29 @@ clk_wiz_0 clk_wiz_inst(
 ////// RESET
 
 wire sw0, sw1, sw2;
+wire [7:0] swkey;
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw0_sync(
 	.clk(clk), .rst(1'b0), .in(SW[0]), .out(sw0));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw1_sync(
 	.clk(clk), .rst(1'b0), .in(SW[1]), .out(sw1));
 delay #(.DELAY_LEN(SYNC_DELAY_LEN)) sw2_sync(
 	.clk(clk), .rst(1'b0), .in(SW[2]), .out(sw2));
+delay #(.DELAY_LEN(SYNC_DELAY_LEN), .DATA_WIDTH(8)) swkey_sync(
+	.clk(clk), .rst(1'b0), .in(SW[8+:8]), .out(swkey));
 
 wire config_transmit;
 assign config_transmit = sw1;
 
 reg prev_sw1 = 0;
+reg [7:0] prev_swkey = 0;
 always @(posedge clk) begin
 	prev_sw1 <= sw1;
+	prev_swkey <= swkey;
 end
 
 // reset device when configuration is changed
 wire config_change_reset;
-assign config_change_reset = sw1 != prev_sw1;
+assign config_change_reset = sw1 != prev_sw1 || swkey != prev_swkey;
 
 wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
@@ -190,7 +195,7 @@ packet_synth_rom_driver psr_inst(
 ////// AES
 
 wire [BLOCK_LEN-1:0] aes_key;
-assign aes_key = {KEY[8+:BLOCK_LEN-8], SW[8+:8]};
+assign aes_key = {KEY[8+:BLOCK_LEN-8], swkey};
 
 wire aes_rst, aes_inclk, aes_outclk, aes_in_done, aes_done;
 wire [BYTE_LEN-1:0] aes_in, aes_out;
@@ -337,7 +342,7 @@ end
 assign ffcp_tx_sfm_readclk =
 	fgp_tx_reading_metadata || aes_encr_upstream_readclk;
 
-assign aes_encr_rst = 1'b0;
+assign aes_encr_rst = ffcp_tx_start && ffcp_tx_type == FFCP_TYPE_SYN;
 assign aes_encr_inclk = ffcp_tx_fgp_outclk && !fgp_tx_reading_metadata;
 assign aes_encr_in = ffcp_tx_fgp_out;
 assign aes_encr_in_done = ffcp_tx_fgp_done;
