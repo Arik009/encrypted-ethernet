@@ -30,6 +30,8 @@ def send_cycle(ser):
 			for i in range(len(im)//512):
 				num_written = ser.write(
 					eth.gen_eth_fgp_payload(i*512, im[i*512:(i+1)*512]))
+				# ser.flush()
+				# time.sleep(1)
 			ser.flush()
 			# print("%d bytes written" % num_written)
 			curr_time = time.time()

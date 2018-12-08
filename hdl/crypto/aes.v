@@ -38,6 +38,34 @@ module aes_combined(
 
 endmodule
 
+module aes_chain(
+	input clk, rst,
+	input inclk, input [BLOCK_LEN-1:0] in, key,
+	output outclk, output [BLOCK_LEN-1:0] out,
+	input decr_select);
+
+`include "params.vh"
+
+reg [BLOCK_LEN-1:0] prev = 0;
+wire [BLOCK_LEN-1:0] aes_out;
+aes_combined aes_inst(
+	.clk(clk), .rst(rst),
+	.inclk(inclk), .in(decr_select ? in : (in ^ prev)),
+	.key(key),
+	.outclk(outclk), .out(aes_out), .decr_select(decr_select));
+assign out = decr_select ? (aes_out ^ prev) : aes_out;
+
+always @(posedge clk) begin
+	if (rst)
+		prev<= 0;
+	else if (decr_select && inclk)
+		prev <= in;
+	else if (!decr_select && outclk)
+		prev <= out;
+end
+
+endmodule
+
 // bytes interface for aes_combined
 module aes_combined_bytes(
 	input clk, rst,
@@ -55,7 +83,7 @@ bytes_to_blocks btbl_inst(
 	.outclk(btbl_outclk), .out(btbl_out));
 wire aes_outclk;
 wire [BLOCK_LEN-1:0] aes_out;
-aes_combined aes_inst(
+aes_chain aes_inst(
 	.clk(clk), .rst(rst),
 	.inclk(btbl_outclk), .in(btbl_out), .key(key),
 	.outclk(aes_outclk), .out(aes_out),
