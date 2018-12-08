@@ -43,7 +43,7 @@ module aes_combined(
     end
     else crypting <= 0;
   end      
-  aes_block block(.in((count == 0) ? (aes_in ^ aes_key) : aes_in), .key(aes_key), .block_num(count-1), .out(aes_out), .decr_select(decr_select));
+  aes_block block(.in(aes_in), .key(aes_key), .block_num(count-1), .out(aes_out), .decr_select(decr_select));
   keygen round_key(.clk(clk), .start(inclk), .key(key), .keyout_sel(decr_select ? 10-count : count), .keyout_selected(aes_key));
   
   assign out = (count == 10) ? aes_out : 0;
