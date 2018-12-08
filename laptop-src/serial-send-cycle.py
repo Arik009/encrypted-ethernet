@@ -8,8 +8,8 @@ import image_bytes
 import fpga_serial
 
 STOP_EARLY = False
-# image_dir = 'images/nyan/'
-image_dir = 'images/rickroll/'
+image_dir = 'images/nyan/'
+# image_dir = 'images/rickroll/'
 IMAGE_WIDTH = 128
 IMAGE_HEIGHT = 128
 FRAME_PERIOD = 1/12

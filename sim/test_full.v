@@ -42,7 +42,7 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.inclk(uart_tx_inclk), .in(uart_tx_in), .txd(uart_txd),
 	.upstream_readclk(uart_tx_readclk));
 
-reg [13:0] sw_prefix = 14'b0100_1110_0000_00;
+reg [13:0] sw_prefix = 14'b0100_1110_0000_10;
 reg rst = 1;
 wire [15:0] sw_tx, sw_rx;
 assign sw_tx = {sw_prefix, 1'b1, rst};
