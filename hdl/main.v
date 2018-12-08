@@ -3,6 +3,7 @@
 // 	additionally, if on, uart debug output will read from vram,
 // 	otherwise from packet buffer
 // SW[2]: UART_CTS override (to test flow control)
+// SW[15:8]: last bits of key for aes
 // BTNC: dump ram
 // BTNL: send sample packet
 module main(
@@ -654,14 +655,19 @@ graphics_main graphics_main_inst(
 
 ////// DEBUGGING SIGNALS
 
+wire aes_rst_pe;
+pulse_extender aes_rst_pe(
+	.clk(clk), .rst(rst), .in(aes_rst), .out(aes_rst_pe));
+
 wire blink;
 blinker blinker_inst(
 	.clk(clk), .rst(rst),
 	.enable(1), .out(blink));
 
 assign LED = {
-	SW[15:4],
+	SW[15:5],
 	blink,
+	aes_rst_pe,
 	uart_cts,
 	config_transmit,
 	rst
