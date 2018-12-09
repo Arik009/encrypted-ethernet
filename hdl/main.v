@@ -666,9 +666,10 @@ blinker blinker_inst(
 	.enable(1), .out(blink));
 
 assign LED = {
-	SW[15:5],
+	SW[15:6],
 	blink,
 	aes_rst_pe,
+	cbc_enable,
 	uart_cts,
 	config_transmit,
 	rst
