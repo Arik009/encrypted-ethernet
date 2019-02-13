@@ -1,18 +1,8 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company:   g.p.hom
-// Engineer:
-//
-// Create Date:    18:18:59 04/21/2013
-// Module Name:    display_8hex
 
-// Description:  Display 8 hex numbers on 7 segment display
-//
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-//
-//////////////////////////////////////////////////////////////////////////////////
+// provided in previous labs
+// displays 8 hex numbers on the 7 segment display
+// designed by gim hom
 module display_8hex(
     input clk,                 // system clock
     input [31:0] data,         // 8 hex numbers, msb first

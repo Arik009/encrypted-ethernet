@@ -1,11 +1,16 @@
+// receives ethernet frames from the rmii interface
+// ethernet frames start with a preamble of alternating ones and zeroes,
+// ending with two ones
+// frames presented on out will not include the preamble
 module rmii_driver(
 	input clk, rst,
+	// rxd and crsdv double as configuration straps when resetting the phy
+	// we use rxerer and intn only for reset configuration
 	inout crsdv_in,
 	inout [1:0] rxd_in,
 	output rxerr, intn,
 	output reg rstn = 0,
 	output reg [1:0] out = 0,
-	// done is pulsed at the same time as the last dibit of a full packet
 	output reg outclk = 0, output done);
 
 `include "params.vh"
@@ -22,13 +27,16 @@ reg [clog2(RESET_SEQUENCE_LEN)-1:0] rst_cnt = 0;
 wire rst_done;
 assign rst_done = rst_cnt == RESET_SEQUENCE_LEN;
 
+// RESET CONFIGURATION
+
 // 100Base-TX Full Duplex, auto-negotiation disabled,
 // CRS active during receive
 localparam DEFAULT_MODE = 3'b011;
 // PHY address, leave at zero
 localparam DEFAULT_PHYAD = 0;
-// REF_CLK in mode
+// REF_CLK in (we control the clocking)
 localparam DEFAULT_NINTSEL = 1;
+
 assign crsdv_in = rst_done ? 1'bz : DEFAULT_MODE[2];
 assign rxd_in = rst_done ? 2'bzz : DEFAULT_MODE[1:0];
 assign rxerr = rst_done ? 1'bz : DEFAULT_PHYAD;
@@ -45,11 +53,15 @@ delay #(.DELAY_LEN(SYNC_DELAY_LEN-1), .DATA_WIDTH(2)) rxd_sync(
 	.clk(clk), .rst(rst), .in(rxd_in), .out(rxd));
 
 localparam STATE_IDLE = 0;
+// crsdv has been asserted, waiting for data to start streaming in
 localparam STATE_WAITING = 1;
+// reading preamble
 localparam STATE_PREAMBLE = 2;
 localparam STATE_RECEIVING = 3;
 reg [1:0] state = STATE_IDLE;
 
+// store previous crsdv to check for toggling
+// a toggling crsdv indicates that dv is asserted but not crs
 reg prev_crsdv;
 always @(posedge clk) begin
 	if (rst_done)
@@ -58,6 +70,11 @@ end
 
 // distinguish crs and dv signals
 // only to be used when state == STATE_RECEIVING
+// this will give the wrong value for crs on the rising edge of crsdv,
+// but this is fine since we aren't using crs
+// this will give the wrong value for dv on the falling edge of crsdv,
+// but this is fine since systems based on ethernet should be robust to
+// zeroes padded to the end of a frame
 wire crsdv_toggling, crs, dv;
 assign crsdv_toggling = prev_crsdv != crsdv;
 assign crs = crsdv_toggling ? 0 : crsdv;
@@ -80,12 +97,14 @@ always @(posedge clk) begin
 		if (crsdv)
 			state <= STATE_WAITING;
 	STATE_WAITING:
+		// drop back to idle if crsdv stops being asserted
 		if (!crsdv)
 			state <= STATE_IDLE;
 		else if (rxd == 2'b01) begin
 			state <= STATE_PREAMBLE;
 		end
 	STATE_PREAMBLE:
+		// drop back to idle if crsdv stops being asserted
 		if (!crsdv)
 			state <= STATE_IDLE;
 		else if (rxd == 2'b11) begin

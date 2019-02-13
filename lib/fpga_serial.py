@@ -29,10 +29,12 @@ def do_serial(callback):
 		raise Exception('USB-Serial Controller Not Found')
 
 	with serial.Serial(port = serial_port, 
+		# 12mbaud
 		baudrate=12000000,
 		parity=serial.PARITY_NONE, 
 		stopbits=serial.STOPBITS_ONE, 
 		bytesize=serial.EIGHTBITS,
+		# enable rts/cts processing
 		rtscts=True,
 		timeout=0) as ser:
 

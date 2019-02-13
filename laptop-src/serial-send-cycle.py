@@ -8,14 +8,14 @@ import image_bytes
 import fpga_serial
 
 STOP_EARLY = False
-# image_dir = 'images/nyan/'
-image_dir = 'images/rickroll/'
+image_dir = 'images/nyan/'
+# image_dir = 'images/rickroll/'
 IMAGE_WIDTH = 128
 IMAGE_HEIGHT = 128
 FRAME_PERIOD = 1/12
 
 def send_cycle(ser):
-	# Only cycle a few times for testing
+	# Only cycle a few times if testing (i.e. STOP_EARLY == True)
 	cnt = 0
 	images = sorted(os.listdir(image_dir))
 	prev_time = time.time()
@@ -30,8 +30,10 @@ def send_cycle(ser):
 			for i in range(len(im)//512):
 				num_written = ser.write(
 					eth.gen_eth_fgp_payload(i*512, im[i*512:(i+1)*512]))
+				# uncomment this to transmit one packet per second
 				# ser.flush()
 				# time.sleep(1)
+			# only flush once per complete frame for better throughput
 			ser.flush()
 			# print("%d bytes written" % num_written)
 			curr_time = time.time()

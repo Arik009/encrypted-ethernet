@@ -4,6 +4,7 @@
 // expects payload and rom delay of PACKET_SYNTH_ROM_DELAY
 // exposes readclk to out latency of PACKET_SYNTH_ROM_DELAY
 module eth_body_tx #(
+	// size of rom holding constants, e.g. mac addresses
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -22,14 +23,14 @@ localparam STATE_MAC_SRC = 2;
 localparam STATE_ETHERTYPE = 3;
 localparam STATE_PAYLOAD = 4;
 
-// "pre-delayed" versions of outputs, to be combined with
-// ram read results
+// "pre-delayed" versions of output data generated internally by this
+// module, to be combined with ram and upstream read results
 wire outclk_pd;
 wire [BYTE_LEN-1:0] out_pd;
 // out_premux is out, but may be overwritten with ram read result
 wire [BYTE_LEN-1:0] out_premux;
-// if we requested a payload read, then we want to use the payload
-// read result instead
+// if we requested a payload (upstream) read, then we want to use the
+// payload read result instead
 // if we requested a read from ram, then we want to use the ram read
 // result instead
 assign out =
@@ -37,6 +38,7 @@ assign out =
 	ram_outclk ? ram_out :
 	out_premux;
 
+// outclk for data that is generated internally by this module
 wire outclk_internal;
 assign outclk = outclk_internal || ram_outclk || inclk;
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) outclk_delay(
@@ -48,14 +50,19 @@ delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY),
 assign done = in_done;
 
 reg [2:0] state = STATE_IDLE;
+// number of bytes transmitted for the current stage
 reg [2:0] cnt;
 
+// multiplex different sources of data
 assign upstream_readclk = state == STATE_PAYLOAD && readclk;
 assign ram_readclk = (
 	(state == STATE_MAC_DST) ||
 	(state == STATE_MAC_SRC) ||
 	(state == STATE_ETHERTYPE)) &&
 	readclk;
+// these signals would be used if we generated any data internally
+// we don't in this module, but keep this anyway to maintain a consistent
+// implementation across different networking modules
 assign outclk_pd = 0;
 assign out_pd = 0;
 
@@ -93,6 +100,7 @@ endmodule
 module crc32(
 	input clk, rst,
 	// allow application to reuse out as a shift register
+	// when shift is asserted, shift the data on out by 2 bits
 	input shift, inclk, input [1:0] in,
 	output [31:0] out);
 
@@ -128,6 +136,7 @@ endmodule
 
 // creates continuous dibit stream for an ethernet frame
 module eth_tx #(
+	// size of rom holding constants, e.g. mac addresses
 	parameter RAM_SIZE = PACKET_SYNTH_ROM_SIZE) (
 	input clk, rst, start, in_done,
 	input inclk, input [BYTE_LEN-1:0] in,
@@ -139,7 +148,7 @@ module eth_tx #(
 
 `include "networking.vh"
 
-// main processing ready for frame body
+// main_rdy indicates that main processing is ready for the frame body
 wire main_rdy;
 wire eth_tx_readclk, eth_tx_outclk, eth_tx_done;
 wire [BYTE_LEN-1:0] eth_tx_out;
@@ -164,13 +173,18 @@ crc32 crc32_inst(
 	.inclk(btd_outclk), .in(btd_out), .out(crc_out));
 
 localparam STATE_IDLE = 0;
+// we need to transmit the preamble
 localparam STATE_PREAMBLE = 1;
 localparam STATE_BODY = 2;
 localparam STATE_CRC = 3;
+// "transmit" an inter-packet gap to ensure that packets are always
+// sufficiently spaced apart
 localparam STATE_GAP = 4;
 
 reg [2:0] state = STATE_IDLE;
+// number of dibits transmitted for the current stage
 reg [5:0] cnt;
+
 // sfd indicates that we have reached the end of the preamble
 wire sfd, crc_done, gap_done;
 // multiply by 4 since we're measuring in dibits
@@ -183,6 +197,8 @@ assign out =
 	sfd ? 2'b11 :
 	(state == STATE_PREAMBLE) ? 2'b01 :
 	crc_out[0+:2];
+// reset the crc module when we enter the crc-protected region, which
+// starts when the preamble ends
 assign crc_rst = rst || sfd;
 assign main_rdy = state == STATE_BODY;
 assign done = gap_done;
@@ -221,6 +237,11 @@ module eth_rx(
 	output outclk, output [BYTE_LEN-1:0] out,
 	output ethertype_outclk,
 	output [ETH_ETHERTYPE_LEN*BYTE_LEN-1:0] ethertype_out,
+	// done is pulsed at the same time as the last dibit of a full packet,
+	// not on the last byte presented on out, giving a chance for the
+	// module to throw an error if the crc check fails
+	// done is only pulsed when a complete frame has been received
+	// without errors
 	output err, done);
 
 `include "networking.vh"
@@ -249,10 +270,15 @@ localparam STATE_CRC = 4;
 localparam STATE_DONE = 5;
 
 reg [2:0] state = STATE_MAC_DST;
+// records number of bytes received for the current stage
 reg [2:0] cnt = 0;
+// idle indicates that we're not currently processing a frame
 reg idle = 1;
+// throw an error if the flow of data breaks while we're processing a frame
 assign err = (!idle && !inclk) ||
+	// we should not be receiving additional data after the crc
 	(state == STATE_DONE && inclk && in != 2'b00) ||
+	// crc check
 	(state == STATE_CRC && inclk && in != crc_out[1:0]);
 
 assign out = dtb_out;
@@ -263,9 +289,12 @@ assign ethertype_done =
 wire crc_done;
 assign crc_done =
 	state == STATE_CRC && cnt == ETH_CRC_LEN-1;
+// a crc error may be thrown on the last dibit, so check for that
+// before asserting done
 assign done = dtb_outclk && crc_done && !err;
 
-// shift in ethertype
+// holds the shifted ethertype, so that the ethertype can be transmitted
+// one byte at a time
 reg [(ETH_ETHERTYPE_LEN-1)*BYTE_LEN-1:0] ethertype_shifted;
 assign ethertype_outclk = dtb_outclk && ethertype_done;
 assign ethertype_out = {ethertype_shifted, dtb_out};
@@ -277,6 +306,7 @@ always @(posedge clk) begin
 		state <= STATE_MAC_DST;
 		cnt <= 0;
 		idle <= 1;
+	// stop processing packets immediately when an error is thrown
 	end else if (err)
 		state <= STATE_DONE;
 	else if (dtb_outclk) begin
@@ -288,6 +318,8 @@ always @(posedge clk) begin
 			cnt <= 0;
 		end else if (ethertype_done)
 			state <= STATE_PAYLOAD;
+		// the length of the payload is determined by the downstream
+		// module, as is standard in networking over ethernet
 		else if (state == STATE_PAYLOAD && downstream_done) begin
 			state <= STATE_CRC;
 			cnt <= 0;

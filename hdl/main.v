@@ -1,12 +1,9 @@
 // SW[0]: reset
 // SW[1]: master configure: on for transmit, off for receive
-// 	additionally, if on, uart debug output will read from vram,
-// 	otherwise from packet buffer
 // SW[2]: UART_CTS override (to test flow control)
 // SW[3]: enable CBC mode
 // SW[15:8]: last bits of key for aes
-// BTNC: dump ram
-// BTNL: send sample packet
+// BTNC: dump ram over uart (from vram, only in transmit configuration)
 module main(
 	input CLK100MHZ,
 	input [15:0] SW,
@@ -39,7 +36,7 @@ localparam RAM_SIZE = PACKET_BUFFER_SIZE;
 localparam VRAM_SIZE = VIDEO_CACHE_RAM_SIZE;
 localparam ROM_SIZE = PACKET_SYNTH_ROM_SIZE;
 
-// TODO: make key configurable with switches
+// fixed key to use; last 8 bits will be overwritten by switches
 localparam KEY = 128'h4b42_4410_770a_ee13_094d_d0da_1217_7bb0;
 
 ////// CLOCKING
@@ -50,7 +47,7 @@ wire clk_50mhz;
 wire clk;
 assign clk = clk_50mhz;
 
-wire clk_120mhz, clk_65mhz;
+wire clk_120mhz;
 
 // 50MHz clock for Ethernet receiving
 clk_wiz_0 clk_wiz_inst(
@@ -59,7 +56,7 @@ clk_wiz_0 clk_wiz_inst(
 	.clk_out1(clk_50mhz),
 	.clk_out3(clk_120mhz));
 
-////// RESET
+////// CONFIGURATION AND RESET
 
 wire sw0, sw1, sw2, sw3;
 wire [7:0] swkey;
@@ -97,6 +94,7 @@ assign config_change_reset =
 
 wire rst;
 // ensure that reset pulse lasts a sufficient long amount of time
+// skip reset when testing
 localparam TESTING = 0;
 localparam RESET_TIMEOUT = TESTING ? 1 : 5000000;
 pulse_extender #(.EXTEND_LEN(RESET_TIMEOUT)) reset_pe(
@@ -147,11 +145,13 @@ xvga xvga_inst(
 	.vga_hsync(vga_hsync_predelay), .vga_vsync(vga_vsync_predelay),
 	.blank(blank));
 
+// vga_col should be set by some downstream module, indicating the
+// color of the current pixel
 wire [COLOR_CHANNEL_LEN-1:0] vga_r_out, vga_g_out, vga_b_out;
 wire [COLOR_LEN-1:0] vga_col;
 assign {vga_r_out, vga_g_out, vga_b_out} = vga_col;
 
-// buffer all outputs
+// buffer all outputs to enforce timing constraints
 delay #(.DATA_WIDTH(COLOR_CHANNEL_LEN)) vga_r_sync(
 	.clk(clk), .rst(rst), .in(vga_r_out), .out(VGA_R));
 delay #(.DATA_WIDTH(COLOR_CHANNEL_LEN)) vga_g_sync(
@@ -196,6 +196,7 @@ packet_synth_rom_driver psr_inst(
 
 ////// AES
 
+// use switches for last 8 bits of key
 wire [BLOCK_LEN-1:0] aes_key;
 assign aes_key = {KEY[8+:BLOCK_LEN-8], swkey};
 
@@ -212,6 +213,8 @@ aes_combined_bytes_buf aes_inst(
 	.outclk(aes_outclk), .out(aes_out), .done(aes_done),
 	.upstream_readclk(aes_upstream_readclk),
 	.decr_select(aes_decr_select), .cbc_enable(cbc_enable));
+
+// multiplex aes for encrypt and decrypt paths
 
 wire aes_encr_rst, aes_decr_rst;
 wire aes_encr_inclk, aes_decr_inclk, aes_encr_outclk, aes_decr_outclk;
@@ -326,7 +329,8 @@ wire ffcp_tx_fgp_offset_outclk;
 wire [BYTE_LEN-1:0] ffcp_tx_fgp_offset_out;
 wire ffcp_tx_fgp_outclk, ffcp_tx_fgp_done;
 wire [BYTE_LEN-1:0] ffcp_tx_fgp_out;
-// use an fgp_rx to split the data from the offset
+// use an fgp_rx to split the data from the offset since we are
+// only encrypting the data
 fgp_rx fgp_rx(
 	.clk(clk), .rst(rst),
 	.inclk(ffcp_tx_sfm_outclk), .in(ffcp_tx_sfm_out),
@@ -351,13 +355,14 @@ assign aes_encr_in_done = ffcp_tx_fgp_done;
 
 wire fgp_tx_start;
 assign fgp_tx_start = ffcp_tx_fgp_offset_outclk;
-// delay AES readclk since every transmit component should have
-// exactly two clock cycles of delay
+// delay the aes readclk since every transmit component should have
+// exactly two clock cycles of delay, but aes has no latency
 wire aes_encr_readclk_pd;
 delay #(.DELAY_LEN(PACKET_SYNTH_ROM_LATENCY)) aes_encr_readclk_delay(
 	.clk(clk), .rst(rst || fgp_tx_start),
 	.in(aes_encr_readclk_pd), .out(aes_encr_readclk));
 
+// glue the fgp header back on
 wire fgp_tx_readclk, fgp_tx_outclk, fgp_tx_done;
 wire [BYTE_LEN-1:0] fgp_tx_out;
 fgp_tx fgp_tx_inst(
@@ -405,9 +410,12 @@ eth_rx eth_rx_inst(
 	.ethertype_outclk(eth_rx_ethertype_outclk),
 	.ethertype_out(eth_rx_ethertype_out),
 	.err(eth_rx_err), .done(eth_rx_done));
+// reset all downstream modules when a receive error occurs
 wire eth_rx_downstream_rst;
 assign eth_rx_downstream_rst = rst || eth_rx_err;
 
+// ffcp_rx_en is asserted (and held until the next packet is received)
+// only when the packet is an ffcp packet, acting as a filter
 reg ffcp_rx_en = 0;
 always @(posedge clk) begin
 	if (eth_rx_downstream_rst)
@@ -433,6 +441,7 @@ ffcp_rx ffcp_rx_inst(
 	.ffcp_type(ffcp_rx_type), .ffcp_index(ffcp_rx_index),
 	.outclk(ffcp_rx_outclk), .out(ffcp_rx_out));
 
+// signals that tell us what kind of ffcp packet we received
 wire ffcp_rx_ack_outclk, ffcp_rx_syn_outclk, ffcp_rx_msg_outclk;
 assign ffcp_rx_ack_outclk =
 	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_ACK;
@@ -441,16 +450,20 @@ assign ffcp_rx_syn_outclk =
 assign ffcp_rx_msg_outclk =
 	ffcp_rx_metadata_outclk && ffcp_rx_type == FFCP_TYPE_MSG;
 
-wire ffcp_rx_commit, ffcp_rx_commit_done;
-wire [clog2(FFCP_BUFFER_LEN)-1:0] ffcp_rx_commit_index;
-
+// we no longer need to use the ffcp_queue interface in the receive
+// configuration
 wire pb_advance_tail_rx, pb_advance_head_rx;
+assign pb_advance_tail_rx = 1'b0;
+assign pb_advance_head_rx = 1'b0;
+
+// stream the ffcp payload into ram
+
+// records the number of bytes of the ffcp payload (which is an fgp
+// datagram) we have received
 reg [clog2(FGP_LEN)-1:0] fgp_rx_cnt = 0;
 assign rx_ram_waddr = {ffcp_rx_index_buf, fgp_rx_cnt};
 assign rx_ram_we = ffcp_rx_outclk;
 assign rx_ram_win = ffcp_rx_out;
-assign pb_advance_tail_rx = 1'b0;
-assign pb_advance_head_rx = 1'b0;
 assign pb_rst_rx = 1'b0;
 always @(posedge clk) begin
 	if (eth_rx_downstream_rst)
@@ -460,10 +473,23 @@ always @(posedge clk) begin
 	else if (ffcp_rx_outclk)
 		fgp_rx_cnt <= fgp_rx_cnt + 1;
 end
-wire ffcp_rx_serv_syn;
 
+// the signal that we send to the ffcp_rx_server to inform it of a syn
+// this is different from the syn_outclk because we need to assert this
+// at the same time as when we assert the ffcp_rx_server's inclk, which
+// only happens when the complete ethernet frame is received
+wire ffcp_rx_serv_syn;
+// if the ffcp_rx_server receives a syn, then we have started a new stream,
+// so all downstream modules should be reset
 wire ffcp_rx_serv_downstream_rst;
 assign ffcp_rx_serv_downstream_rst = rst || ffcp_rx_serv_syn;
+
+// signals related to the ffcp_rx_server
+wire ffcp_rx_commit, ffcp_rx_commit_done;
+wire [clog2(FFCP_BUFFER_LEN)-1:0] ffcp_rx_commit_index;
+
+// at some point, the ffcp_rx_server will commit the packet
+// and we stream the packet from the packet buffer to VRAM
 wire [clog2(RAM_SIZE)-1:0] ffcp_rx_sfm_read_start;
 assign ffcp_rx_sfm_read_start =
 	{ffcp_rx_commit_index, {clog2(FGP_LEN){1'b0}}};
@@ -481,6 +507,9 @@ stream_from_memory #(.RAM_SIZE(RAM_SIZE),
 	.done(ffcp_rx_commit_done));
 assign rx_ram_rst = ffcp_rx_serv_downstream_rst;
 assign ffcp_rx_sfm_readclk = aes_decr_upstream_readclk;
+
+// the packets are stored in the packet buffer along with the fgp header
+// we use the fgp header to determine where to stream the data to in vram
 
 wire fgp_rx_setoff_req;
 wire [BYTE_LEN+clog2(FGP_DATA_LEN_COLORS)-1:0] fgp_rx_setoff_val;
@@ -517,8 +546,10 @@ stream_to_memory
 	.ram_we(vram_we), .ram_waddr(vram_waddr),
 	.ram_win(vram_win));
 
-////// FFCP FLOW CONTROL
+////// FFCP FLOW CONTROL (RECEIVE CONFIGURATION)
 
+// buffer ffcp header information so that we can provide them to the
+// ffcp_rx_server after the complete ethernet frame has been received
 reg ffcp_syn_buf;
 reg [FFCP_INDEX_LEN-1:0] ffcp_rx_index_buf;
 always @(posedge clk) begin
@@ -539,6 +570,8 @@ ffcp_rx_server ffcp_rx_serv_inst(
 	.commit(ffcp_rx_commit), .commit_index(ffcp_rx_commit_index),
 	.commit_done(ffcp_rx_commit_done),
 	.outclk(ffcp_ack_start), .out_index(ffcp_ack_index));
+
+////// FFCP FLOW CONTROL (TRANSMIT CONFIGURATION)
 
 wire [clog2(PB_QUEUE_LEN)-1:0] pb_head, pb_tail;
 // pb_advance_head_rx, pb_advance_tail_rx and pb_rst_rx
@@ -581,9 +614,11 @@ assign ffcp_tx_type = config_transmit ?
 	(ffcp_tx_syn ? FFCP_TYPE_SYN : FFCP_TYPE_MSG) : FFCP_TYPE_ACK;
 assign ffcp_tx_index = config_transmit ? ffcp_msg_index : ffcp_ack_index;
 
-////// UART RX => RAM
+////// UART RX => RAM (TRANSMIT CONFIGURATION)
 
 wire uart_cts;
+// request laptop to stop transmitting when the packet buffer is
+// almost full, or when we manually override cts
 assign uart_cts = sw2 || pb_almost_full;
 assign UART_CTS = uart_cts;
 wire [7:0] uart_rx_out;
@@ -593,17 +628,20 @@ uart_rx_fast_driver uart_rx_inst(
 	.rxd(UART_TXD_IN), .out(uart_rx_out), .outclk(uart_rx_outclk));
 wire uart_rx_active;
 // reset downstream modules if nothing is received for 1ms, and not
-// because we told upstream to stop transmitting
+// because we told upstream to pause transmitting
 pulse_extender #(.EXTEND_LEN(50000)) uart_rx_active_pe(
 	.clk(clk), .rst(rst),
 	.in(uart_rx_outclk || uart_cts), .out(uart_rx_active));
 wire uart_rx_downstream_rst;
 assign uart_rx_downstream_rst = rst || !uart_rx_active;
 
+// streams data from uart to ram
 reg [clog2(FGP_LEN)-1:0] uart_rx_cnt = 0;
 assign uart_ram_waddr = {pb_tail, uart_rx_cnt};
 assign uart_ram_we = uart_rx_outclk;
 assign uart_ram_win = uart_rx_out;
+// when we have received a complete fgp packet, advance the tail and
+// start streaming to the next partition in the packet buffer queue
 assign pb_advance_tail_tx = uart_rx_outclk && uart_rx_cnt == FGP_LEN-1;
 always @(posedge clk) begin
 	if (uart_rx_downstream_rst)
@@ -613,7 +651,7 @@ always @(posedge clk) begin
 end
 assign pb_advance_head_tx = 1'b0;
 
-////// UART TX <= RAM
+////// UART TX <= RAM/VRAM
 
 wire uart_tx_inclk, uart_tx_readclk;
 wire [BYTE_LEN-1:0] uart_tx_in;
@@ -643,7 +681,7 @@ uart_tx_fast_stream_driver uart_tx_inst(
 	.upstream_readclk(uart_sfm_readclk));
 assign uart_tx_readclk = 1'b1;
 
-////// VRAM => VGA
+////// VRAM => VGA (RECEIVE CONFIGURATION)
 
 graphics_main graphics_main_inst(
 	.clk(clk), .rst(rst), .blank(blank),

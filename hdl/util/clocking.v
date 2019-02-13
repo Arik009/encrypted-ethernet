@@ -1,3 +1,4 @@
+// synchronizes a reset signal over a clock boundary using an IP FIFO
 module reset_stream_fifo(
 	input clka, clkb,
 	input rsta, output rstb);
@@ -13,6 +14,7 @@ bit_stream_fifo reset_fifo(
 assign fifo_rden = !fifo_empty;
 delay reset_fifo_read_delay(
 	.clk(clkb), .rst(rstb), .in(fifo_rden), .out(fifo_prev_rden));
+// fifo_out is only valid when rden was asserted the previous clock cycle
 assign rstb = fifo_prev_rden && fifo_out;
 
 endmodule

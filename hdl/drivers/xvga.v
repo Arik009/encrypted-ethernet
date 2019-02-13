@@ -1,16 +1,21 @@
 `timescale 1ns / 1ps
 
+// adapted from code provided for previous labs
 module xvga(
 	input clk,
+	// vga_x and vga_y are only valid when blank is not asserted
 	output [clog2(VGA_WIDTH)-1:0] vga_x,
 	output [clog2(VGA_HEIGHT)-1:0] vga_y,
 	output reg vsync, hsync,
-	// vga outputs account for polarity
+	// vga_* versions of vsync and hsync account for polarity
 	output vga_vsync, vga_hsync,
 	output reg blank);
 
 `include "params.vh"
 
+// parameters from the VGA spec
+
+// 800x600
 localparam VGA_H_FRONT_PORCH = 56;
 localparam VGA_H_SYNC = 120;
 localparam VGA_H_BACK_PORCH = 64;
@@ -37,6 +42,7 @@ localparam VGA_POLARITY = 0;
 // localparam VGA_V_BACK_PORCH = 33;
 // localparam VGA_POLARITY = 1;
 
+// maximum values that hcount and vcount can take
 localparam VGA_H_TOT = VGA_WIDTH +
 	VGA_H_FRONT_PORCH + VGA_H_FRONT_PORCH + VGA_H_SYNC;
 localparam VGA_V_TOT = VGA_HEIGHT +
@@ -44,6 +50,7 @@ localparam VGA_V_TOT = VGA_HEIGHT +
 
 reg [clog2(VGA_H_TOT)-1:0] hcount;
 reg [clog2(VGA_V_TOT)-1:0] vcount;
+// no reason to keep all the information in hcount and vcount for outputs
 assign vga_x = hcount[0+:clog2(VGA_HEIGHT)];
 assign vga_y = vcount[0+:clog2(VGA_WIDTH)];
 

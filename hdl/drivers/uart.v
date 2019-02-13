@@ -9,18 +9,28 @@ module uart_rx_fast_driver #(
 
 `include "params.vh"
 
-// count the number of consecutive zeroes to detect start bit
+// counts the number of consecutive zeroes to detect start bit
+// the start bit is detected when rxd has been deasserted for
+// CYCLES_PER_BIT/2 cycles
+// this ensures that we read the subsequent bits in the middle of each bit
 reg [clog2(CYCLES_PER_BIT/2)-1:0] start_bit_cnt = 0;
 
+// shift register to convert bits into bytes
 reg [BYTE_LEN-1:0] curr_byte_shifted;
 
+// count the number of clock cycles since we read a bit
+// when cycle_in_bit_cnt == CYCLES_PER_BIT-1, it's time to read
+// the next bit
 reg [clog2(CYCLES_PER_BIT)-1:0] cycle_in_bit_cnt = 0;
+// number of bits read for the current byte
 // allow bit_in_byte_cnt to go to BYTE_LEN + 2 to detect start/stop bit
+// when zero, indicates that we are waiting to receive the start bit
 reg [clog2(BYTE_LEN+2)-1:0] bit_in_byte_cnt = 0;
 
 reg outclk_120mhz = 0;
 reg [BYTE_LEN-1:0] out_120mhz;
 
+// ip fifo to synchronize across clock boundaries
 wire fifo_empty, fifo_rden;
 assign fifo_rden = !fifo_empty;
 byte_stream_fifo data_fifo(
@@ -44,6 +54,7 @@ always @(posedge clk_120mhz) begin
 	end else begin
 		if (rxd)
 			start_bit_cnt <= 0;
+		// stop incrementing when start_bit_cnt reaches its maximum value
 		else if (start_bit_cnt != CYCLES_PER_BIT/2-1)
 			start_bit_cnt <= start_bit_cnt + 1;
 
@@ -65,6 +76,7 @@ always @(posedge clk_120mhz) begin
 					bit_in_byte_cnt <= 0;
 				end else begin
 					bit_in_byte_cnt <= bit_in_byte_cnt + 1;
+					// uart is little-endian, so shift in from the left
 					curr_byte_shifted <=
 						{rxd, curr_byte_shifted[1+:BYTE_LEN-1]};
 				end
@@ -108,9 +120,11 @@ module uart_tx_fast_driver #(
 `include "params.vh"
 
 // two extra bits for start/stop bits
+// initialize to all ones to indicate that nothing is being transmitted
 reg [BYTE_LEN+2-1:0] curr_byte_shifted = ~0;
 assign txd = curr_byte_shifted[0];
 
+// number of bits in the current byte left to transmit
 // allow bits_left_cnt to go to BYTE_LEN + 2 to send start/stop bits
 reg [clog2(BYTE_LEN+2)-1:0] bits_left_cnt = 0;
 
@@ -122,10 +136,14 @@ reset_stream_fifo reset_fifo_inst(
 	.clka(clk), .clkb(clk_120mhz),
 	.rsta(rst), .rstb(rst_120mhz));
 
+// not actually a clock
+// used as a timer to ensure that bits are transmitted at the correct rate
+// for uart
 wire tx_clk;
 clock_divider #(.PULSE_PERIOD(CYCLES_PER_BIT)) tx_clock_divider(
 	.clk(clk_120mhz), .rst(rst_120mhz), .en(1'b1), .out(tx_clk));
 
+// ip fifo to synchronize across clock boundary
 wire fifo_empty, fifo_full, fifo_rden;
 assign fifo_rden = !fifo_empty && tx_clk && bits_left_cnt == 0;
 byte_stream_fifo data_fifo(
