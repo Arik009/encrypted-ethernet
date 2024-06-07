@@ -9,6 +9,10 @@ Important Definitions :-
 
 -> RMII (Reduced Media Independent Interface) - Uses less no. of pins than standard MAC. Visit - https://en.wikipedia.org/wiki/Media-independent_interface#RMII
 
+-> RGMII (Reduced Gigabit MII) - RGMII is the most common interface because it supports 10 Mbps, 100 Mbps, and 1000 Mbps connection speeds at the PHY layer. RGMII uses four-bit wide transmit and receive data paths, each with its own source-synchronous clock. All transmit data and control signals are source synchronous to TX_CLK, and all receive data and control signals are source synchronous to RX_CLK.For all speed modes, TX_CLK is sourced by the MAC, and RX_CLK is sourced by the PHY. In 1000 Mbps mode, TX_CLK and RX_CLK are 125 MHz, and Dual Data Rate (DDR) signaling is used. In 10 Mbps and 100 Mbps modes, TX_CLK and RX_CLK are 2.5 MHz and 25 MHz, respectively, and rising edge Single Data Rate (SDR) signaling is used.
+
+P.S -> Check out the difference betweem rmii and rgmii further down this file.
+
 -> MDIO (Management Data Input/Output) - It is a serial bus which is a subset of yhe MII that is used to transfer management information between 
    MAC and PHY(bidirectional).
 
@@ -905,3 +909,18 @@ These Verilog modules are designed to manipulate data streams of various widths 
 - Coordinated, buffered versions of `stream_unpack` and `bytes_to_dibits`.
 - Ensure data is passed out immediately when downstream is ready.
 - Synchronize clocks and manage data flow between modules.
+
+
+Key differences between RMII and RGMII:
+
+Clock Rate: RGMII operates at a higher clock rate compared to RMII. Therefore, adjustments are made in the clocking domain.
+
+Signal Width: RGMII uses wider data paths for both transmit and receive signals. In this example, rgmii_txd and rgmii_rxd are 4-bit wide.
+
+Clock Skew: RGMII may have clock skew between transmit and receive clocks. Adjustments for clock skew are implemented in the module.
+
+Signal Control: RGMII has separate control signals for transmit and receive (rgmii_tx_ctl and rgmii_rx_ctl). These signals are used to control the state machine transitions.
+
+Preamble Detection: The preamble pattern detection is modified to match the RGMII preamble pattern.
+
+Frame Completion: The done signal is asserted when a complete frame is received, indicating reception completion.
