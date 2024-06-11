@@ -26,7 +26,10 @@ P.S -> Check out the difference betweem rmii and rgmii further down this file.
 
                                       ( D0 D1 D2 D3 D4 D5 D6 D7 D8 )
                                       
-                                        MSB ----------------->> LSB							  
+                                        MSB ----------------->> LSB		
+
+
+  Youtube link for UART - https://www.youtube.com/watch?v=JuvWbRhhpdI   
 
 -> VRAM (Video RAM) - RAM from the GPU, from where the graphics module extracts data and displays over the VGA.
 
