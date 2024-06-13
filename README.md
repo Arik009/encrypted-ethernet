@@ -750,26 +750,67 @@ It reads pixel data from RAM and outputs it based on the VGA coordinates and tim
 ***Wrapper for BRAM cores***
 They provide a standardized interface for accessing these memory cores with separate read and write clock domains, abstracting away the latency introduced by the memory accesses.
 
-### `video_cache_ram_driver` Module:
-- This module serves as a driver for a video cache RAM, which likely stores pixel data for a video display.
-- It interfaces with the `video_cache_ram` module, which represents the actual RAM core.
-- It provides separate clock domains for reading (`readclk`) and writing (`clk`), along with read and write addresses (`raddr` and `waddr`) and data input (`win`).
-- It introduces a delay (`READ_LATENCY`) to synchronize the read clock domain with the output clock domain (`outclk`).
+### 1. `video_cache_ram_driver`
+This module acts as a wrapper around a video cache RAM module (`video_cache_ram`). It provides an interface for reading and writing data to the RAM while abstracting away the latency of the RAM access. Here's a breakdown of its components:
 
-### `packet_synth_rom_driver` Module:
-- This module serves as a driver for a packet synthesis ROM (Read-Only Memory), which likely stores predefined packet data.
-- It interfaces with the `packet_synth_rom` module, which represents the ROM core.
-- Similar to the `video_cache_ram_driver`, it provides separate clock domains for reading (`readclk`) and writing (`clk`), along with a read address (`raddr`).
-- It introduces a delay (`READ_LATENCY`) to synchronize the read clock domain with the output clock domain (`outclk`).
+- **Parameters:**
+  - `RAM_SIZE`: Specifies the size of the RAM.
+  - `READ_LATENCY`: Specifies the read latency of the RAM.
 
-### `packet_buffer_ram_driver` Module:
-- This module serves as a driver for a packet buffer RAM, which likely stores incoming or outgoing packet data.
-- It interfaces with the `packet_buffer_ram` module, which represents the RAM core.
-- Similar to the other drivers, it provides separate clock domains for reading (`readclk`) and writing (`clk`), along with read and write addresses (`raddr` and `waddr`) and data input (`win`).
-- It introduces a delay (`READ_LATENCY`) to synchronize the read clock domain with the output clock domain (`outclk`).
+- **Ports:**
+  - `clk`, `rst`: Clock and reset signals.
+  - `readclk`: Clock signal for reading from the RAM.
+  - `raddr`: Read address.
+  - `we`: Write enable signal.
+  - `waddr`: Write address.
+  - `win`: Input data for writing.
+  - `outclk`: Clock signal for the output.
+  - `out`: Output data from the RAM.
 
-These modules abstract away the complexities of memory access and clock domain crossing, providing a clean interface for other modules to interact with the underlying memory cores. 
+- **Internal Components:**
+  - `delay_inst`: Delay module to handle the read latency.
+  - `video_cache_ram_inst`: Instance of the video cache RAM module.
 
+### 2. `packet_synth_rom_driver`
+This module serves as a wrapper around a packet synthesis ROM module (`packet_synth_rom`). It provides an interface for reading data from the ROM while abstracting away its latency. Here's a breakdown:
+
+- **Parameters:**
+  - `RAM_SIZE`: Specifies the size of the ROM.
+  - `READ_LATENCY`: Specifies the read latency of the ROM.
+
+- **Ports:**
+  - `clk`, `rst`: Clock and reset signals.
+  - `readclk`: Clock signal for reading from the ROM.
+  - `raddr`: Read address.
+  - `outclk`: Clock signal for the output.
+  - `out`: Output data from the ROM.
+
+- **Internal Components:**
+  - `delay_inst`: Delay module to handle the read latency.
+  - `packet_synth_rom_inst`: Instance of the packet synthesis ROM module.
+
+### 3. `packet_buffer_ram_driver`
+This module is a wrapper around a packet buffer RAM module (`packet_buffer_ram`). It provides an interface for reading and writing data to the RAM while abstracting away its latency. Here's a detailed breakdown:
+
+- **Parameters:**
+  - `RAM_SIZE`: Specifies the size of the RAM.
+  - `READ_LATENCY`: Specifies the read latency of the RAM.
+
+- **Ports:**
+  - `clk`, `rst`: Clock and reset signals.
+  - `readclk`: Clock signal for reading from the RAM.
+  - `raddr`: Read address.
+  - `we`: Write enable signal.
+  - `waddr`: Write address.
+  - `win`: Input data for writing.
+  - `outclk`: Clock signal for the output.
+  - `out`: Output data from the RAM.
+
+- **Internal Components:**
+  - `delay_inst`: Delay module to handle the read latency.
+  - `packet_buffer_ram_inst`: Instance of the packet buffer RAM module.
+
+Each of these modules abstracts the details of their respective memory modules and provides a simplified interface for interaction while handling the latency internally.
 ***IPv4 Checksum***
 It is responsible for calculating the Internet Protocol version 4 (IPv4) checksum. 
 
