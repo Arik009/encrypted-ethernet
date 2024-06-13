@@ -1,6 +1,7 @@
 // these are wrappers around the ip bram cores
 // provides a readclk-outclk interface so that other modules don't need
 // to be aware of the bram latency
+`include "packets.v"
 
 module video_cache_ram_driver #(
 	parameter RAM_SIZE = VIDEO_CACHE_RAM_SIZE,
