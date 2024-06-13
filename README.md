@@ -750,6 +750,12 @@ It reads pixel data from RAM and outputs it based on the VGA coordinates and tim
 ***Wrapper for BRAM cores***
 They provide a standardized interface for accessing these memory cores with separate read and write clock domains, abstracting away the latency introduced by the memory accesses.
 
+**Read latency** -> refers to the delay or the number of clock cycles it takes for data to be available after a read operation is initiated. In the context of memory modules like RAM or ROM, read latency indicates the time it takes for the requested data to be accessed and presented at the output after providing the read address.
+
+For example, let's say we have a RAM module with a read latency of 4 clock cycles. When you provide a read address to this RAM and initiate a read operation, the data won't be available immediately. Instead, it will take 4 clock cycles (assuming each clock cycle is a unit of time) for the data to appear at the output of the RAM.
+
+In the provided Verilog code, the `READ_LATENCY` parameter in each module definition specifies the read latency of the corresponding memory module. This parameter is then used to configure a delay module (`delay_inst`) within each wrapper module to handle the read latency. This delay ensures that the output data is synchronized with the appropriate clock signal after the specified latency.
+
 ### 1. `video_cache_ram_driver`
 This module acts as a wrapper around a video cache RAM module (`video_cache_ram`). It provides an interface for reading and writing data to the RAM while abstracting away the latency of the RAM access. Here's a breakdown of its components:
 
