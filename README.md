@@ -71,6 +71,23 @@ Data circuits	Control circuits	Voltage
 
 -> Clock Domain Asynchronous Interface - enanbles data to be written into the FIFO in one clock domain and read from another.
 
+## Ethernet
+-> It is the most widely used LAN (Local Area Network) technology. It operates within the data link layer and physical layer and supports data bandwidths of 10,100,1000
+   10^4,4*10^4 Mbps and 100 Gbps.
+
+<> Ethernet Standards - Defined by Layer 2 protocols and Layer 1 technologies. It should have 2 different sublayers of the data link layer to operate :-
+   Logic Link Control(LLC) and the MAC sublayers. 
+
+<> Structure of Ethernet - 
+
+              {   Preamble  }...{  SFD  }....[Destination Address]....[Source Address]....[Length/Type]....[Data and Padding]....[CRC]
+
+		   7 Bytes         1 Byte        6 Bytes                 6 Bytes           2 Bytes         Max 1500 Bytes        4 Bytes  
+ 
+                                                                                                           Min 46 Bytes 
+													   
+             |<--Physical Layer	Header-->|  |<------------------------------Ethernet Frame-------------------------------------->|											    
+
 ## FGPA Graphics Protocol (FGP)
 -> It is designed to facilitate the generation of frames within a network communication system. Components :- 
 
