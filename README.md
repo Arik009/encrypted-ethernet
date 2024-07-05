@@ -834,7 +834,9 @@ This module is a wrapper around a packet buffer RAM module (`packet_buffer_ram`)
   - `packet_buffer_ram_inst`: Instance of the packet buffer RAM module.
 
 Each of these modules abstracts the details of their respective memory modules and provides a simplified interface for interaction while handling the latency internally.
+
 ***IPv4 Checksum***
+
 It is responsible for calculating the Internet Protocol version 4 (IPv4) checksum. 
 
 ### Inputs:
